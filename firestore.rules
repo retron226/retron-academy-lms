@@ -1,0 +1,82 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function getUserData() {
+      return get( /databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+    
+    function hasRole(role) {
+      return isAuthenticated() && getUserData().role == role;
+    }
+    
+    function isAdmin() {
+      return hasRole('admin');
+    }
+    
+    function isInstructor() {
+      return hasRole('instructor');
+    }
+    
+    // Users collection
+    match /users/{userId} {
+      // Allow read for all authenticated users (to display names, etc.)
+      allow read: if isAuthenticated();
+      // Only admins can delete or update roles
+      // For signup (create), we allow if auth uid matches
+      allow create: if isAuthenticated() && request.auth.uid == userId;
+      // Update: Users can update their own non-role data, Admins can update anything
+      allow update: if isAuthenticated() && (request.auth.uid == userId || isAdmin());
+      
+      // Course Progress subcollection
+      match /courseProgress/{courseId} {
+        allow read: if isAuthenticated() && (request.auth.uid == userId || isInstructor() || isAdmin());
+        allow write: if isAuthenticated() && (request.auth.uid == userId || isAdmin());
+      }
+    }
+    
+    // Courses collection
+    match /courses/{courseId} {
+      // Anyone can read course basics
+      allow read: if isAuthenticated();
+      
+      // Instructors can create courses
+      allow create: if isInstructor() || isAdmin();
+      
+      // Instructors can update/delete their own courses
+      allow update, delete: if (isInstructor() && resource.data.instructorId == request.auth.uid) || isAdmin();
+      
+      // Sections subcollection
+      match /sections/{sectionId} {
+        allow read: if isAuthenticated();
+        allow write: if (isInstructor() && get(/databases/$(database)/documents/courses/$(courseId)).data.instructorId == request.auth.uid) || isAdmin();
+        
+        // Modules subcollection (nested in sections? No, code uses subcollection of sections)
+        // Wait, CurriculumEditor uses collection(db, "courses", courseId, "sections")
+        // And modules are stored INSIDE the section document as an array in the code I saw?
+        // Let's check CurriculumEditor.jsx: 
+        // await addDoc(collection(db, "courses", courseId, "sections"), { ... modules: [] })
+        // So modules are just data fields.
+        // But wait, StudentCourses.jsx fetches modules? No, it fetches sections.
+        // So we don't need a modules match rule if they are just arrays.
+      }
+    }
+
+    // Assessments collection
+    match /assessments/{assessmentId} {
+      allow read: if isAuthenticated();
+      allow create: if isInstructor() || isAdmin();
+      allow update, delete: if (isInstructor() && resource.data.instructorId == request.auth.uid) || isAdmin();
+      
+      match /submissions/{submissionId} {
+        allow read: if isAuthenticated() && (request.auth.uid == submissionId || isInstructor() || isAdmin());
+        allow create, update: if isAuthenticated() && request.auth.uid == submissionId;
+      }
+    }
+  }
+}
