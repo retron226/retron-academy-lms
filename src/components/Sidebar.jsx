@@ -16,6 +16,8 @@ import {
 import { cn } from "../lib/utils";
 import { Button } from "./ui/button";
 
+import logo from "../assets/logo.jpg";
+
 export function Sidebar({ collapsed, setCollapsed }) {
     const { userData, signOut } = useAuth();
     const location = useLocation();
@@ -60,11 +62,10 @@ export function Sidebar({ collapsed, setCollapsed }) {
             <div className={cn("flex h-14 items-center border-b px-4", collapsed ? "justify-center" : "justify-between")}>
                 {!collapsed && (
                     <Link to="/" className="flex items-center gap-2 font-semibold">
-                        <GraduationCap className="h-6 w-6" />
-                        <span>LMS Platform</span>
+                        <img src={logo} alt="Retron Energies" className="h-12 w-auto object-contain" />
                     </Link>
                 )}
-                {collapsed && <GraduationCap className="h-6 w-6" />}
+                {collapsed && <img src={logo} alt="Retron Energies" className="h-8 w-8 object-contain" />}
             </div>
 
             <div className="flex-1 overflow-auto py-2">
