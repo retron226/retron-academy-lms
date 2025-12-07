@@ -16,6 +16,23 @@ export default function ModuleEditor({ isOpen, onClose, onSave, initialData }) {
 
     if (!isOpen) return null;
 
+    const validateFile = (file) => {
+        // 50MB limit for videos, 5MB for images/others
+        const MAX_VIDEO_SIZE = 50 * 1024 * 1024;
+        const MAX_IMAGE_SIZE = 5 * 1024 * 1024;
+        const isVideo = file.type.startsWith('video/');
+
+        if (isVideo && file.size > MAX_VIDEO_SIZE) {
+            alert(`File too large. Max video size is 50MB. Your file: ${(file.size / 1024 / 1024).toFixed(2)}MB`);
+            return false;
+        }
+        if (!isVideo && file.size > MAX_IMAGE_SIZE) {
+            alert(`File too large. Max size is 5MB. Your file: ${(file.size / 1024 / 1024).toFixed(2)}MB`);
+            return false;
+        }
+        return true;
+    };
+
     const handleAddQuestion = () => {
         if (!currentQuestion.question.trim()) return;
         setQuizQuestions([...quizQuestions, currentQuestion]);

@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { db } from "../../lib/firebase";
-import { collection, query, where, getDocs, updateDoc, doc, arrayUnion, getDoc } from "firebase/firestore";
+import { collection, query, where, getDocs, updateDoc, doc, arrayUnion, getDoc, documentId } from "firebase/firestore";
 import { useAuth } from "../../contexts/AuthContext";
 import { Link } from "react-router-dom";
 import { Button } from "../../components/ui/button";
@@ -29,46 +29,49 @@ export default function StudentCourses() {
                 return;
             }
 
-            // Firestore 'in' query supports up to 10 items. If more, we need to batch or fetch individually.
-            // For MVP, assuming < 10 courses or we just fetch all and filter client side (not efficient but simple)
-            // Or just fetch individually since we have IDs.
-            const coursesPromises = userData.enrolledCourses.map(id => getDoc(doc(db, "courses", id)));
-            const coursesSnaps = await Promise.all(coursesPromises);
+            const enrolledIds = userData.enrolledCourses;
+            const chunks = [];
+            for (let i = 0; i < enrolledIds.length; i += 10) {
+                chunks.push(enrolledIds.slice(i, i + 10));
+            }
 
-            const coursesData = await Promise.all(coursesSnaps
-                .filter(snap => snap.exists())
-                .map(async snap => {
-                    const courseData = { id: snap.id, ...snap.data() };
+            let allCourses = [];
 
-                    // Fetch progress
-                    let progressData = { completedModules: [] };
-                    try {
-                        const progressSnap = await getDoc(doc(db, "users", user.uid, "courseProgress", snap.id));
-                        if (progressSnap.exists()) {
-                            progressData = progressSnap.data();
-                        }
-                    } catch (e) {
-                        console.error("Error fetching progress for course", snap.id, e);
-                    }
+            for (const chunk of chunks) {
+                // Batch fetch courses
+                const coursesq = query(collection(db, "courses"), where(documentId(), "in", chunk));
+                const coursesSnap = await getDocs(coursesq);
 
-                    // Fallback: If totalModules is missing, fetch sections to count
-                    if (courseData.totalModules === undefined) {
-                        try {
-                            const sectionsSnap = await getDocs(collection(db, "courses", snap.id, "sections"));
-                            let calculatedTotal = 0;
-                            sectionsSnap.forEach(doc => {
-                                calculatedTotal += (doc.data().modules?.length || 0);
-                            });
-                            courseData.totalModules = calculatedTotal;
-                        } catch (e) {
-                            console.error("Error calculating total modules", e);
-                        }
-                    }
+                // Batch fetch progress
+                const progressq = query(collection(db, "users", user.uid, "courseProgress"), where(documentId(), "in", chunk));
+                const progressSnap = await getDocs(progressq);
 
-                    return { ...courseData, progress: progressData };
-                }));
+                // Map progress by ID for easy lookup
+                const progressMap = {};
+                progressSnap.forEach(doc => {
+                    progressMap[doc.id] = doc.data();
+                });
 
-            setEnrolledCourses(coursesData);
+                const chunkCourses = coursesSnap.docs.map(doc => {
+                    const data = doc.data();
+                    const progress = progressMap[doc.id] || { completedModules: [] };
+
+                    // Use stored totalModules, fallback to 0 if missing (should be updated by editor)
+                    // We removed the expensive subcollection fetch here.
+                    const totalModules = data.totalModules || 0;
+
+                    return {
+                        id: doc.id,
+                        ...data,
+                        totalModules,
+                        progress
+                    };
+                });
+
+                allCourses = [...allCourses, ...chunkCourses];
+            }
+
+            setEnrolledCourses(allCourses);
         } catch (error) {
             console.error("Error fetching enrolled courses:", error);
         } finally {

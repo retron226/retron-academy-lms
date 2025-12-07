@@ -2,15 +2,30 @@ rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
     match /{allPaths=**} {
-      // Only authenticated users can read (or maybe enrolled students? keeping it simple for now)
-      allow read: if request.auth != null;
+      // Helper functions
+      function isAuth() {
+        return request.auth != null;
+      }
       
-      // Only instructors and admins can upload
-      // We'll need to verify role in the token or just trust for now if we can't easily look up firestore from storage rules (we can, but it's advanced)
-      // For simplicity in this MVP, we'll allow any auth user to write if they are an instructor (enforced by UI/logic) 
-      // OR we can use custom claims. 
-      // Let's just allow auth users to write for now, but ideally we restrict to instructors.
-      allow write: if request.auth != null; 
+      function isImage() {
+        return request.resource.contentType.matches('image/.*');
+      }
+      
+      function isVideo() {
+        return request.resource.contentType.matches('video/.*');
+      }
+      
+      function isValidSize() {
+        // Max 50MB for videos, 5MB for images
+        return (isImage() && request.resource.size < 5 * 1024 * 1024) ||
+               (isVideo() && request.resource.size < 50 * 1024 * 1024);
+      }
+
+      // Allow read for authenticated users
+      allow read: if isAuth();
+
+      // Allow write if authenticated, valid type, and valid size
+      allow write: if isAuth() && isValidSize();
     }
   }
 }

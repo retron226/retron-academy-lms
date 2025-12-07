@@ -1,56 +1,78 @@
+import React, { Suspense } from "react";
 import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider } from "./contexts/AuthContext";
 import { ProtectedRoute } from "./components/ProtectedRoute";
-import Login from "./pages/Login";
-import Signup from "./pages/Signup";
-import AdminDashboard from "./pages/AdminDashboard";
-import InstructorDashboard from "./pages/InstructorDashboard";
-import StudentDashboard from "./pages/StudentDashboard";
 import Layout from "./components/Layout";
+import ErrorBoundary from "./components/ErrorBoundary";
+import { Loader2 } from "lucide-react";
+
+// Lazy load pages for performance (Code Splitting)
+const Login = React.lazy(() => import("./pages/Login"));
+const Signup = React.lazy(() => import("./pages/Signup"));
+const AdminDashboard = React.lazy(() => import("./pages/AdminDashboard"));
+const InstructorDashboard = React.lazy(() => import("./pages/InstructorDashboard"));
+const StudentDashboard = React.lazy(() => import("./pages/StudentDashboard"));
+const Terms = React.lazy(() => import("./pages/legal/Terms"));
+const Privacy = React.lazy(() => import("./pages/legal/Privacy"));
+
+// Loading fallback component
+const PageLoader = () => (
+  <div className="flex h-screen w-full items-center justify-center">
+    <Loader2 className="h-8 w-8 animate-spin text-primary" />
+  </div>
+);
 
 function App() {
   return (
     <Router>
-      <AuthProvider>
-        <Routes>
-          <Route path="/login" element={<Login />} />
-          <Route path="/signup" element={<Signup />} />
+      <ErrorBoundary>
+        <AuthProvider>
+          <Suspense fallback={<PageLoader />}>
+            <Routes>
+              <Route path="/login" element={<Login />} />
+              <Route path="/signup" element={<Signup />} />
 
-          <Route element={<Layout />}>
-            <Route
-              path="/admin/*"
-              element={
-                <ProtectedRoute allowedRoles={['admin']}>
-                  <AdminDashboard />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/instructor/*"
-              element={
-                <ProtectedRoute allowedRoles={['instructor']}>
-                  <InstructorDashboard />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/student/*"
-              element={
-                <ProtectedRoute allowedRoles={['student']}>
-                  <StudentDashboard />
-                </ProtectedRoute>
-              }
-            />
-          </Route>
+              {/* Legal Pages (Public) */}
+              <Route path="/terms" element={<Layout><Terms /></Layout>} />
+              <Route path="/privacy" element={<Layout><Privacy /></Layout>} />
 
-          {/* Default redirect based on role is handled in ProtectedRoute, 
-              but for root path we can redirect to a default or landing page.
-              For now, let's redirect to student dashboard as default or login.
-          */}
-          <Route path="/" element={<Navigate to="/student" replace />} />
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
-      </AuthProvider>
+              <Route element={<Layout />}>
+                <Route
+                  path="/admin/*"
+                  element={
+                    <ProtectedRoute allowedRoles={['admin']}>
+                      <AdminDashboard />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/instructor/*"
+                  element={
+                    <ProtectedRoute allowedRoles={['instructor']}>
+                      <InstructorDashboard />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/student/*"
+                  element={
+                    <ProtectedRoute allowedRoles={['student']}>
+                      <StudentDashboard />
+                    </ProtectedRoute>
+                  }
+                />
+              </Route>
+
+              {/* Default redirect based on role is handled in ProtectedRoute, 
+                  but for root path we can redirect to a default or landing page.
+                  For now, let's redirect to student dashboard as default or login.
+              */}
+              <Route path="/" element={<Navigate to="/student" replace />} />
+              <Route path="*" element={<Navigate to="/" replace />} />
+            </Routes>
+          </Suspense>
+        </AuthProvider>
+      </ErrorBoundary>
     </Router>
   );
 }
