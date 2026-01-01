@@ -18,6 +18,10 @@ export default function StudentCourses() {
     useEffect(() => {
         if (userData) {
             fetchEnrolledCourses();
+        } else {
+            // If userData is missing (e.g. no profile doc), stop loading
+            setEnrolledCourses([]);
+            setLoading(false);
         }
     }, [userData]);
 

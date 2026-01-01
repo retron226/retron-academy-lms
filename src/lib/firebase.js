@@ -12,6 +12,26 @@ const firebaseConfig = {
     appId: import.meta.env.VITE_FIREBASE_APP_ID
 };
 
+// Validate config
+const requiredKeys = [
+    'apiKey',
+    'authDomain',
+    'projectId',
+    'storageBucket',
+    'messagingSenderId',
+    'appId'
+];
+
+const missingKeys = requiredKeys.filter(key => !firebaseConfig[key]);
+
+if (missingKeys.length > 0) {
+    console.error(`Missing Firebase configuration keys: ${missingKeys.join(', ')}`);
+    // We don't throw error here to allow app to load and show friendly error in UI
+}
+
+export const isFirebaseInitialized = missingKeys.length === 0;
+
+
 const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 export const db = getFirestore(app);
