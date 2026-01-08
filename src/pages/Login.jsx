@@ -2,7 +2,7 @@
 import { useState } from "react";
 import { signInWithEmailAndPassword, sendPasswordResetEmail } from "firebase/auth";
 import { auth } from "../lib/firebase";
-import { useNavigate, Link } from "react-router-dom";
+import { useNavigate, Link, useLocation } from "react-router-dom";
 import { Eye, EyeOff, Loader2, X } from "lucide-react";
 
 import logo from "../assets/retron-logo-full.jpg";
@@ -22,6 +22,8 @@ export default function Login() {
     const [resetError, setResetError] = useState("");
 
     const navigate = useNavigate();
+    const location = useLocation();
+    const successMessage = location.state?.message;
 
     const handleLogin = async (e) => {
         e.preventDefault();
@@ -157,6 +159,12 @@ export default function Login() {
                             </button>
                         </div>
                     </div>
+
+                    {successMessage && (
+                        <div className="p-3 rounded-md bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400 text-sm text-center">
+                            {successMessage}
+                        </div>
+                    )}
 
                     {error && (
                         <div className="text-sm text-destructive text-center">{error}</div>

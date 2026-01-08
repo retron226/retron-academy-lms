@@ -57,7 +57,11 @@ export default function ResetPassword() {
 
         try {
             await confirmPasswordReset(auth, actionCode, newPassword);
-            setStatus("success");
+            // Immediately redirect to login page
+            navigate("/login", {
+                replace: true,
+                state: { message: "Password reset successful! Please sign in with your new password." }
+            });
         } catch (err) {
             console.error(err);
             setStatus("input");
@@ -90,27 +94,6 @@ export default function ResetPassword() {
         );
     }
 
-    if (status === "success") {
-        return (
-            <div className="flex min-h-screen items-center justify-center bg-background px-4">
-                <div className="w-full max-w-md text-center space-y-6 rounded-lg border bg-card p-8 shadow-sm">
-                    <div className="flex justify-center">
-                        <CheckCircle className="h-12 w-12 text-green-500" />
-                    </div>
-                    <h2 className="text-2xl font-bold">Password Reset Complete</h2>
-                    <p className="text-muted-foreground">
-                        Your password has been successfully updated. You can now sign in with your new password.
-                    </p>
-                    <Link
-                        to="/login"
-                        className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
-                    >
-                        Sign In
-                    </Link>
-                </div>
-            </div>
-        );
-    }
 
     return (
         <div className="flex min-h-screen items-center justify-center bg-background px-4 py-12">
