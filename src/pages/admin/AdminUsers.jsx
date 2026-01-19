@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { db } from "../../lib/firebase";
-import { collection, getDocs, deleteDoc, doc, updateDoc, query, where, limit, startAfter } from "firebase/firestore";
+import { collection, getDocs, deleteDoc, doc, updateDoc, query, where, limit, startAfter, getDoc } from "firebase/firestore";
 import {
     Table,
     TableBody,
@@ -11,19 +11,20 @@ import {
 } from "../../components/ui/table";
 import { Button } from "../../components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
-import { Trash2, Ban, CheckCircle, Users, GraduationCap, Eye, ArrowUpCircle, X, Search, Building2, Shield } from "lucide-react";
+import { Trash2, Ban, CheckCircle, Users, GraduationCap, Eye, ArrowUpCircle, X, Search, Building2, Shield, UserCheck, MapPin, Mail } from "lucide-react";
 import { cn } from "../../lib/utils";
 import { useAuth } from "../../contexts/AuthContext";
-import { ROLES } from "../../lib/rbac";
-import { logRoleChange, logSuspensionChange, logInstitutionAssignment, logPermissionChange } from "../../lib/auditLog";
+import { ROLES, getRoleDisplayName, getRoleDescription } from "../../lib/rbac";
+import { logRoleChange, logSuspensionChange, logPermissionChange } from "../../lib/auditLog";
 
 export default function AdminUsers() {
     const { user, userData } = useAuth();
     const [users, setUsers] = useState([]);
-    const [institutions, setInstitutions] = useState([]);
+    const [institutions, setInstitutions] = useState({}); // Store institutions by ID
     const [loading, setLoading] = useState(true);
-    const [activeTab, setActiveTab] = useState("student");
+    const [activeTab, setActiveTab] = useState(ROLES.STUDENT);
     const [selectedUser, setSelectedUser] = useState(null);
+    const [selectedUserInstitution, setSelectedUserInstitution] = useState(null);
     const [searchQuery, setSearchQuery] = useState("");
     const [openDropdown, setOpenDropdown] = useState(null);
     const [lastDoc, setLastDoc] = useState(null);
@@ -31,34 +32,36 @@ export default function AdminUsers() {
     const [isFetchingMore, setIsFetchingMore] = useState(false);
     const USERS_PER_PAGE = 20;
 
-    const [showPartnerModal, setShowPartnerModal] = useState(false);
-    const [partnerFormData, setPartnerFormData] = useState({
+    // Modal states
+    const [showRoleModal, setShowRoleModal] = useState(false);
+    const [roleModalData, setRoleModalData] = useState({
         userId: null,
-        institutionId: "",
-        permissions: {
-            view_institution_students: true,
-            view_institution_progress: true,
-            export_institution_data: false
-        },
-        reason: ""
+        targetRole: '',
+        targetUser: null
     });
+
+    const [showPermissionModal, setShowPermissionModal] = useState(false);
+    const [permissionData, setPermissionData] = useState({
+        userId: null,
+        permissions: {},
+        targetUser: null
+    });
+
+    // Fetch all institutions on component mount
+    useEffect(() => {
+        fetchInstitutions();
+    }, []);
 
     useEffect(() => {
         setUsers([]);
         setLastDoc(null);
         setHasMore(true);
-        fetchUsers(true); // Reset and fetch new tab data
+        fetchUsers(true);
     }, [activeTab]);
 
     useEffect(() => {
-        fetchInstitutions();
-    }, []);
-
-    // Close dropdown when clicking outside
-    useEffect(() => {
         const handleClickOutside = (event) => {
             if (openDropdown !== null) {
-                // Check if click is outside dropdown
                 const dropdownElement = event.target.closest('.dropdown-container');
                 if (!dropdownElement) {
                     setOpenDropdown(null);
@@ -71,6 +74,25 @@ export default function AdminUsers() {
             document.removeEventListener('mousedown', handleClickOutside);
         };
     }, [openDropdown]);
+
+    const fetchInstitutions = async () => {
+        try {
+            const institutionsRef = collection(db, "institutions");
+            const snapshot = await getDocs(institutionsRef);
+            const institutionsMap = {};
+
+            snapshot.forEach(doc => {
+                institutionsMap[doc.id] = {
+                    id: doc.id,
+                    ...doc.data()
+                };
+            });
+
+            setInstitutions(institutionsMap);
+        } catch (error) {
+            console.error("Error fetching institutions:", error);
+        }
+    };
 
     const fetchUsers = async (isReset = false) => {
         try {
@@ -113,22 +135,27 @@ export default function AdminUsers() {
         }
     };
 
+    // Fetch institution details for a specific user
+    const fetchUserInstitution = async (userId, institutionId) => {
+        if (!institutionId) return null;
+
+        try {
+            const institutionDoc = await getDoc(doc(db, "institutions", institutionId));
+            if (institutionDoc.exists()) {
+                return {
+                    id: institutionDoc.id,
+                    ...institutionDoc.data()
+                };
+            }
+        } catch (error) {
+            console.error("Error fetching institution:", error);
+        }
+        return null;
+    };
+
     const handleLoadMore = () => {
         if (!isFetchingMore && hasMore) {
             fetchUsers(false);
-        }
-    };
-
-    const fetchInstitutions = async () => {
-        try {
-            const querySnapshot = await getDocs(collection(db, "institutions"));
-            const institutionsData = querySnapshot.docs.map(doc => ({
-                id: doc.id,
-                ...doc.data()
-            }));
-            setInstitutions(institutionsData);
-        } catch (error) {
-            console.error("Error fetching institutions:", error);
         }
     };
 
@@ -137,6 +164,7 @@ export default function AdminUsers() {
             try {
                 await deleteDoc(doc(db, "users", userId));
                 setUsers(users.filter(user => user.id !== userId));
+                alert("User deleted successfully!");
             } catch (error) {
                 console.error("Error deleting user:", error);
                 alert("Failed to delete user");
@@ -148,10 +176,10 @@ export default function AdminUsers() {
         try {
             const newStatus = !currentStatus;
             await updateDoc(doc(db, "users", targetUser.id), {
-                suspended: newStatus
+                suspended: newStatus,
+                updatedAt: new Date().toISOString()
             });
 
-            // Log suspension change
             await logSuspensionChange(
                 user.uid,
                 userData.email,
@@ -164,187 +192,201 @@ export default function AdminUsers() {
             setUsers(users.map(u =>
                 u.id === targetUser.id ? { ...u, suspended: newStatus } : u
             ));
+            alert(`User ${newStatus ? 'suspended' : 'unsuspended'} successfully!`);
         } catch (error) {
             console.error("Error updating user status:", error);
+            alert("Failed to update user status");
         }
     };
 
-    const handlePromote = async (targetUser) => {
-        if (window.confirm("Are you sure you want to promote this student to Instructor?")) {
-            try {
-                const oldRole = targetUser.role;
-                const newRole = ROLES.INSTRUCTOR;
-
-                await updateDoc(doc(db, "users", targetUser.id), {
-                    role: newRole
-                });
-
-                // Log role change
-                await logRoleChange(
-                    user.uid,
-                    userData.email,
-                    targetUser.id,
-                    targetUser.email,
-                    oldRole,
-                    newRole,
-                    "Promoted to instructor by admin"
-                );
-
-                setUsers(users.map(u =>
-                    u.id === targetUser.id ? { ...u, role: newRole } : u
-                ));
-                alert("User promoted successfully!");
-            } catch (error) {
-                console.error("Error promoting user:", error);
-                alert("Failed to promote user.");
-            }
-        }
-    };
-
-    const handleAssignPartnerInstructor = (targetUser) => {
-        setPartnerFormData({
+    const handleOpenRoleModal = (targetUser, targetRole) => {
+        setRoleModalData({
             userId: targetUser.id,
-            institutionId: targetUser.institutionId || "",
-            // If user is STUDENT, we don't need permissions, but we keep structure if we reuse modal
-            permissions: {
-                view_institution_students: true,
-                view_institution_progress: true,
-                export_institution_data: false
-            },
-            reason: "",
-            isStudentAssignment: targetUser.role === ROLES.STUDENT // Flag to distinguish
+            targetRole: targetRole,
+            targetUser: targetUser
         });
-        setShowPartnerModal(true);
+        setShowRoleModal(true);
     };
 
-    const handlePartnerInstructorSubmit = async () => {
-        if (!partnerFormData.institutionId) {
-            alert("Please select an institution");
-            return;
-        }
+    const handleRoleChange = async () => {
+        if (!roleModalData.userId || !roleModalData.targetRole) return;
+
+        const roleNames = {
+            [ROLES.STUDENT]: "Student",
+            [ROLES.PARTNER_INSTRUCTOR]: "Partner Instructor",
+            [ROLES.INSTRUCTOR]: "Instructor"
+        };
+
+        const targetUser = roleModalData.targetUser;
 
         try {
-            const targetUser = users.find(u => u.id === partnerFormData.userId);
-            const institution = institutions.find(i => i.id === partnerFormData.institutionId);
             const oldRole = targetUser.role;
-
-            // If updating a student, we KEEP the role as STUDENT, unless they were being promoted (which is a separate action)
-            // But here we are just assigning institution.
-            // If the flag 'isStudentAssignment' is true, we DO NOT change role to PARTNER_INSTRUCTOR.
-
-            // Wait, looking at the UI, "Assign as Partner Instructor" implies role change.
-            // "Assign to Institution" (new for students) implies just data link.
-
-            // Let's assume:
-            // - If Role is INSTRUCTOR -> Change to PARTNER_INSTRUCTOR
-            // - If Role is STUDENT -> Keep as STUDENT, just update institutionId (unless we are promoting? No, explicit action needed)
-
-            // Actually, the user asked: "Assign the students under the partner instructors".
-            // This implies linking Student -> Institution.
-
-            let newRole = oldRole;
-            let logMessage = "Assigned to institution";
-
-            if (oldRole === ROLES.INSTRUCTOR || oldRole === ROLES.PARTNER_INSTRUCTOR) {
-                newRole = ROLES.PARTNER_INSTRUCTOR;
-                logMessage = "Assigned as partner instructor";
-            } else if (oldRole === ROLES.STUDENT && partnerFormData.isStudentAssignment) {
-                // Explicitly keeping student role, just assigning institution
-                newRole = ROLES.STUDENT;
-            } else {
-                // Fallback behavior (e.g. if we decided to promote students via this modal later)
-                // For now, let's treat "Assign as Partner Instructor" button as Role Change, 
-                // and "Assign to Institution" button as Link Change.
-
-                // However, we are reusing the same submit handler. 
-                // We relied on `partnerFormData.isStudentAssignment` (which I added above).
-
-                // If isStudentAssignment is TRUE, it means we clicked "Assign to Institution".
-                // If FALSE (or undefined from old 'Assign as Partner Instructor' calls? I should update that button too), it's the old behavior.
-
-                // Let's simplify:
-                // If target is STUDENT, we only assign ID.
-                // If target is INSTRUCTOR, we assign ID + Role change.
-
-                // Correction: A student *could* be promoted to Partner Instructor, but that should probably be "Promote" first.
-                // User request: "assign the students under the partner instructors". = Student Role, Institution ID set.
-
-                if (oldRole === ROLES.INSTRUCTOR) newRole = ROLES.PARTNER_INSTRUCTOR;
-            }
+            const newRole = roleModalData.targetRole;
 
             const updateData = {
-                institutionId: partnerFormData.institutionId
+                role: newRole,
+                updatedAt: new Date().toISOString()
             };
 
-            // Only update role and permissions if we are actually making them a Partner Instructor
+            // If changing to partner instructor, keep or set institutionId
             if (newRole === ROLES.PARTNER_INSTRUCTOR) {
-                updateData.role = newRole;
-                updateData.permissions = partnerFormData.permissions;
+                // Set default partner instructor permissions
+                updateData.permissions = {
+                    view_assigned_courses: true,
+                    view_assigned_students: true,
+                    grade_assigned_assessments: true,
+                    provide_feedback: true,
+                    send_messages: true,
+                    create_announcements: true,
+                    view_course_content: true
+                };
+
+                // If user already has an institutionId (from being a partner instructor before), keep it
+                if (!targetUser.institutionId) {
+                    // In a real app, you might want to prompt admin to select an institution
+                    // For now, we'll set a default or leave it null
+                    updateData.institutionId = null; // Admin should assign institution separately
+                }
+            } else if (oldRole === ROLES.PARTNER_INSTRUCTOR && newRole !== ROLES.PARTNER_INSTRUCTOR) {
+                // Clear permissions and institutionId when leaving partner instructor role
+                updateData.permissions = null;
+                updateData.institutionId = null;
             }
 
-            await updateDoc(doc(db, "users", partnerFormData.userId), updateData);
+            await updateDoc(doc(db, "users", roleModalData.userId), updateData);
 
-            // Log institution assignment
-            await logInstitutionAssignment(
+            // Log role change
+            await logRoleChange(
                 user.uid,
                 userData.email,
-                partnerFormData.userId,
+                roleModalData.userId,
                 targetUser.email,
-                partnerFormData.institutionId,
-                institution.name,
-                partnerFormData.reason || logMessage
+                oldRole,
+                newRole,
+                `Role changed from ${oldRole} to ${newRole} by admin`
             );
 
-            // Log role change if it happened
-            if (newRole !== oldRole) {
-                await logRoleChange(
-                    user.uid,
-                    userData.email,
-                    partnerFormData.userId,
-                    targetUser.email,
-                    oldRole,
-                    newRole,
-                    partnerFormData.reason || logMessage
-                );
-                // Log permission change only for Partner Instructors
+            // Log permission change if applicable
+            if (newRole === ROLES.PARTNER_INSTRUCTOR) {
                 await logPermissionChange(
                     user.uid,
                     userData.email,
-                    partnerFormData.userId,
+                    roleModalData.userId,
                     targetUser.email,
-                    {},
-                    partnerFormData.permissions,
-                    "Initial partner instructor permissions"
+                    targetUser.permissions || {},
+                    updateData.permissions || {},
+                    "Initial partner instructor permissions assigned"
                 );
             }
 
             setUsers(users.map(u =>
-                u.id === partnerFormData.userId ? {
+                u.id === roleModalData.userId ? {
                     ...u,
                     ...updateData
                 } : u
             ));
 
-            setShowPartnerModal(false);
-            alert("Assignment successful!");
+            setShowRoleModal(false);
+            setRoleModalData({ userId: null, targetRole: '', targetUser: null });
+            alert(`User role updated to ${roleNames[newRole]} successfully!`);
         } catch (error) {
-            console.error("Error assigning institution:", error);
-            alert("Failed to assign institution.");
+            console.error("Error changing user role:", error);
+            alert("Failed to change user role.");
         }
     };
 
-    // Filter users by search query (Role filtering is handled server-side)
+    const handleOpenPermissionModal = (targetUser) => {
+        setPermissionData({
+            userId: targetUser.id,
+            permissions: targetUser.permissions || {
+                view_assigned_courses: true,
+                view_assigned_students: true,
+                grade_assigned_assessments: true,
+                provide_feedback: true,
+                send_messages: true,
+                create_announcements: true,
+                view_course_content: true
+            },
+            targetUser: targetUser
+        });
+        setShowPermissionModal(true);
+    };
+
+    const handlePermissionUpdate = async () => {
+        if (!permissionData.userId) return;
+
+        try {
+            const targetUser = permissionData.targetUser;
+            const oldPermissions = targetUser.permissions || {};
+
+            await updateDoc(doc(db, "users", permissionData.userId), {
+                permissions: permissionData.permissions,
+                updatedAt: new Date().toISOString()
+            });
+
+            // Log permission change
+            await logPermissionChange(
+                user.uid,
+                userData.email,
+                permissionData.userId,
+                targetUser.email,
+                oldPermissions,
+                permissionData.permissions,
+                "Partner instructor permissions updated by admin"
+            );
+
+            setUsers(users.map(u =>
+                u.id === permissionData.userId ? {
+                    ...u,
+                    permissions: permissionData.permissions
+                } : u
+            ));
+
+            setShowPermissionModal(false);
+            setPermissionData({ userId: null, permissions: {}, targetUser: null });
+            alert("Permissions updated successfully!");
+        } catch (error) {
+            console.error("Error updating permissions:", error);
+            alert("Failed to update permissions.");
+        }
+    };
+
+    // Handle viewing user details
+    const handleViewUserDetails = async (user) => {
+        setSelectedUser(user);
+        setSelectedUserInstitution(null);
+
+        // Fetch institution details if user has institutionId
+        if (user.institutionId) {
+            const institution = await fetchUserInstitution(user.id, user.institutionId);
+            setSelectedUserInstitution(institution);
+        }
+    };
+
+    // Filter users by search query
     const filteredUsers = users.filter(user => {
         const matchesSearch = searchQuery === "" ||
             user.email?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-            user.fullName?.toLowerCase().includes(searchQuery.toLowerCase());
+            user.fullName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            (user.institutionId && institutions[user.institutionId]?.name?.toLowerCase().includes(searchQuery.toLowerCase()));
         return matchesSearch;
     });
 
-    if (loading) return <div>Loading users...</div>;
+    // Get institution name for display
+    const getInstitutionName = (user) => {
+        if (!user.institutionId) return "Not assigned";
+        return institutions[user.institutionId]?.name || "Unknown Institution";
+    };
+
+    if (loading) return (
+        <div className="flex h-64 items-center justify-center">
+            <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent"></div>
+        </div>
+    );
 
     return (
         <div className="space-y-6 relative">
+            {/* Header */}
             <div className="flex items-center justify-between">
                 <h1 className="text-3xl font-bold tracking-tight">User Management</h1>
             </div>
@@ -354,7 +396,7 @@ export default function AdminUsers() {
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <input
                     type="text"
-                    placeholder="Search by email or name..."
+                    placeholder="Search by email, name, or institution..."
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     className="w-full pl-10 pr-4 py-2 rounded-md border border-input bg-background text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
@@ -376,6 +418,18 @@ export default function AdminUsers() {
                     Students
                 </button>
                 <button
+                    onClick={() => setActiveTab(ROLES.PARTNER_INSTRUCTOR)}
+                    className={cn(
+                        "flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md transition-all",
+                        activeTab === ROLES.PARTNER_INSTRUCTOR
+                            ? "bg-background text-foreground shadow-sm"
+                            : "text-muted-foreground hover:bg-background/50"
+                    )}
+                >
+                    <UserCheck className="h-4 w-4" />
+                    Partner Instructors
+                </button>
+                <button
                     onClick={() => setActiveTab(ROLES.INSTRUCTOR)}
                     className={cn(
                         "flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md transition-all",
@@ -387,26 +441,16 @@ export default function AdminUsers() {
                     <Users className="h-4 w-4" />
                     Instructors
                 </button>
-                <button
-                    onClick={() => setActiveTab(ROLES.PARTNER_INSTRUCTOR)}
-                    className={cn(
-                        "flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md transition-all",
-                        activeTab === ROLES.PARTNER_INSTRUCTOR
-                            ? "bg-background text-foreground shadow-sm"
-                            : "text-muted-foreground hover:bg-background/50"
-                    )}
-                >
-                    <Building2 className="h-4 w-4" />
-                    Partner Instructors
-                </button>
             </div>
 
+            {/* Users Table */}
             <Card className="shadow-sm">
                 <CardHeader>
                     <CardTitle className="text-lg">
-                        {activeTab === ROLES.STUDENT && "Students Directory"}
-                        {activeTab === ROLES.INSTRUCTOR && "Instructors Directory"}
-                        {activeTab === ROLES.PARTNER_INSTRUCTOR && "Partner Instructors"}
+                        {getRoleDisplayName(activeTab)} Directory
+                        <p className="text-sm text-muted-foreground font-normal mt-1">
+                            {getRoleDescription(activeTab)}
+                        </p>
                     </CardTitle>
                 </CardHeader>
                 <CardContent>
@@ -416,15 +460,17 @@ export default function AdminUsers() {
                                 <TableRow>
                                     <TableHead>Name</TableHead>
                                     <TableHead>Email</TableHead>
+                                    <TableHead>Role</TableHead>
+                                    <TableHead>Status</TableHead>
                                     {activeTab === ROLES.PARTNER_INSTRUCTOR && <TableHead>Institution</TableHead>}
-                                    <TableHead className="w-24">Actions</TableHead>
+                                    <TableHead className="w-32">Actions</TableHead>
                                 </TableRow>
                             </TableHeader>
                             <TableBody>
                                 {filteredUsers.length === 0 ? (
                                     <TableRow>
-                                        <TableCell colSpan={activeTab === ROLES.PARTNER_INSTRUCTOR ? 4 : 3} className="text-center py-8 text-muted-foreground">
-                                            No {activeTab === ROLES.PARTNER_INSTRUCTOR ? "partner instructors" : `${activeTab}s`} found.
+                                        <TableCell colSpan={activeTab === ROLES.PARTNER_INSTRUCTOR ? 6 : 5} className="text-center py-8 text-muted-foreground">
+                                            No {getRoleDisplayName(activeTab).toLowerCase()}s found.
                                         </TableCell>
                                     </TableRow>
                                 ) : (
@@ -434,9 +480,30 @@ export default function AdminUsers() {
                                                 {targetUser.fullName || "N/A"}
                                             </TableCell>
                                             <TableCell>{targetUser.email}</TableCell>
+                                            <TableCell>
+                                                <span className="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium bg-blue-100 text-blue-800">
+                                                    {getRoleDisplayName(targetUser.role)}
+                                                </span>
+                                            </TableCell>
+                                            <TableCell>
+                                                <span className={cn(
+                                                    "inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium",
+                                                    targetUser.suspended
+                                                        ? "bg-red-100 text-red-800"
+                                                        : "bg-green-100 text-green-800"
+                                                )}>
+                                                    {targetUser.suspended ? "Suspended" : "Active"}
+                                                </span>
+                                            </TableCell>
                                             {activeTab === ROLES.PARTNER_INSTRUCTOR && (
                                                 <TableCell>
-                                                    {institutions.find(i => i.id === targetUser.institutionId)?.name || "N/A"}</TableCell>
+                                                    <div className="flex items-center gap-2">
+                                                        <Building2 className="h-3 w-3 text-muted-foreground" />
+                                                        <span className="text-sm">
+                                                            {getInstitutionName(targetUser)}
+                                                        </span>
+                                                    </div>
+                                                </TableCell>
                                             )}
                                             <TableCell>
                                                 <div className="relative inline-block text-left dropdown-container">
@@ -461,9 +528,10 @@ export default function AdminUsers() {
                                                             : "mt-2 origin-top-right"
                                                             }`}>
                                                             <div className="py-2" role="menu">
+                                                                {/* View Details */}
                                                                 <button
                                                                     onClick={() => {
-                                                                        setSelectedUser(targetUser);
+                                                                        handleViewUserDetails(targetUser);
                                                                         setOpenDropdown(null);
                                                                     }}
                                                                     className="flex w-full items-center gap-3 px-4 py-3 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
@@ -472,11 +540,22 @@ export default function AdminUsers() {
                                                                     <span className="font-medium">View Details</span>
                                                                 </button>
 
-                                                                {activeTab === ROLES.STUDENT && (
+                                                                {/* Role Change Options */}
+                                                                {targetUser.role === ROLES.STUDENT && (
                                                                     <>
                                                                         <button
                                                                             onClick={() => {
-                                                                                handlePromote(targetUser);
+                                                                                handleOpenRoleModal(targetUser, ROLES.PARTNER_INSTRUCTOR);
+                                                                                setOpenDropdown(null);
+                                                                            }}
+                                                                            className="flex w-full items-center gap-3 px-4 py-3 text-sm text-purple-600 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-950 transition-colors"
+                                                                        >
+                                                                            <UserCheck className="h-4 w-4" />
+                                                                            <span className="font-medium">Make Partner Instructor</span>
+                                                                        </button>
+                                                                        <button
+                                                                            onClick={() => {
+                                                                                handleOpenRoleModal(targetUser, ROLES.INSTRUCTOR);
                                                                                 setOpenDropdown(null);
                                                                             }}
                                                                             className="flex w-full items-center gap-3 px-4 py-3 text-sm text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950 transition-colors"
@@ -484,32 +563,48 @@ export default function AdminUsers() {
                                                                             <ArrowUpCircle className="h-4 w-4" />
                                                                             <span className="font-medium">Promote to Instructor</span>
                                                                         </button>
+                                                                    </>
+                                                                )}
+
+                                                                {targetUser.role === ROLES.PARTNER_INSTRUCTOR && (
+                                                                    <>
                                                                         <button
                                                                             onClick={() => {
-                                                                                handleAssignPartnerInstructor(targetUser);
+                                                                                handleOpenPermissionModal(targetUser);
                                                                                 setOpenDropdown(null);
                                                                             }}
-                                                                            className="flex w-full items-center gap-3 px-4 py-3 text-sm text-teal-600 dark:text-teal-400 hover:bg-teal-50 dark:hover:bg-teal-950 transition-colors"
+                                                                            className="flex w-full items-center gap-3 px-4 py-3 text-sm text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950 transition-colors"
                                                                         >
-                                                                            <Building2 className="h-4 w-4" />
-                                                                            <span className="font-medium">Assign to Institution</span>
+                                                                            <Shield className="h-4 w-4" />
+                                                                            <span className="font-medium">Manage Permissions</span>
+                                                                        </button>
+                                                                        <button
+                                                                            onClick={() => {
+                                                                                handleOpenRoleModal(targetUser, ROLES.INSTRUCTOR);
+                                                                                setOpenDropdown(null);
+                                                                            }}
+                                                                            className="flex w-full items-center gap-3 px-4 py-3 text-sm text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950 transition-colors"
+                                                                        >
+                                                                            <ArrowUpCircle className="h-4 w-4" />
+                                                                            <span className="font-medium">Promote to Instructor</span>
                                                                         </button>
                                                                     </>
                                                                 )}
 
-                                                                {(activeTab === ROLES.STUDENT || activeTab === ROLES.INSTRUCTOR) && (
+                                                                {targetUser.role === ROLES.INSTRUCTOR && targetUser.role !== ROLES.PARTNER_INSTRUCTOR && (
                                                                     <button
                                                                         onClick={() => {
-                                                                            handleAssignPartnerInstructor(targetUser);
+                                                                            handleOpenRoleModal(targetUser, ROLES.PARTNER_INSTRUCTOR);
                                                                             setOpenDropdown(null);
                                                                         }}
                                                                         className="flex w-full items-center gap-3 px-4 py-3 text-sm text-purple-600 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-950 transition-colors"
                                                                     >
-                                                                        <Shield className="h-4 w-4" />
-                                                                        <span className="font-medium">Assign as Partner Instructor</span>
+                                                                        <UserCheck className="h-4 w-4" />
+                                                                        <span className="font-medium">Make Partner Instructor</span>
                                                                     </button>
                                                                 )}
 
+                                                                {/* Suspend/Unsuspend */}
                                                                 <button
                                                                     onClick={() => {
                                                                         handleToggleSuspend(targetUser, targetUser.suspended);
@@ -532,6 +627,7 @@ export default function AdminUsers() {
 
                                                                 <div className="border-t border-gray-200 dark:border-gray-700 my-1"></div>
 
+                                                                {/* Delete User */}
                                                                 <button
                                                                     onClick={() => {
                                                                         handleDeleteUser(targetUser.id);
@@ -578,10 +674,13 @@ export default function AdminUsers() {
 
             {/* User Details Modal */}
             {selectedUser && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-                    <div className="bg-background rounded-lg shadow-lg w-full max-w-md p-6 relative animate-in fade-in zoom-in duration-200">
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 ">
+                    <div className="bg-background rounded-lg shadow-lg w-full max-w-md  max-h-[75vh] overflow-auto p-6 relative animate-in fade-in zoom-in duration-200">
                         <button
-                            onClick={() => setSelectedUser(null)}
+                            onClick={() => {
+                                setSelectedUser(null);
+                                setSelectedUserInstitution(null);
+                            }}
                             className="absolute top-4 right-4 text-muted-foreground hover:text-foreground"
                         >
                             <X className="h-5 w-5" />
@@ -601,33 +700,73 @@ export default function AdminUsers() {
                             </div>
 
                             <div>
-                                <label className="text-sm font-medium text-muted-foreground">College / University</label>
-                                <p className="text-lg">{selectedUser.college || "N/A"}</p>
+                                <label className="text-sm font-medium text-muted-foreground">Role</label>
+                                <div className="flex items-center gap-2">
+                                    <span className="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium bg-blue-100 text-blue-800">
+                                        {getRoleDisplayName(selectedUser.role)}
+                                    </span>
+                                    <span className="text-sm text-muted-foreground">
+                                        {getRoleDescription(selectedUser.role)}
+                                    </span>
+                                </div>
                             </div>
 
                             <div>
-                                <label className="text-sm font-medium text-muted-foreground">Role</label>
-                                <p className="capitalize">{selectedUser.role}</p>
+                                <label className="text-sm font-medium text-muted-foreground">Status</label>
+                                <p className={selectedUser.suspended ? "text-red-600" : "text-green-600"}>
+                                    {selectedUser.suspended ? "Suspended" : "Active"}
+                                </p>
                             </div>
 
-                            {selectedUser.role === ROLES.PARTNER_INSTRUCTOR && (
-                                <>
-                                    <div>
-                                        <label className="text-sm font-medium text-muted-foreground">Institution</label>
-                                        <p>{institutions.find(i => i.id === selectedUser.institutionId)?.name || "N/A"}</p>
-                                    </div>
-                                    <div>
-                                        <label className="text-sm font-medium text-muted-foreground">Permissions</label>
-                                        <div className="mt-2 space-y-1">
-                                            {selectedUser.permissions && Object.entries(selectedUser.permissions).map(([key, value]) => (
-                                                <div key={key} className="flex items-center gap-2">
-                                                    {value ? <CheckCircle className="h-4 w-4 text-green-600" /> : <X className="h-4 w-4 text-red-600" />}
-                                                    <span className="text-sm capitalize">{key.replace(/_/g, ' ')}</span>
+                            {/* Institution Details */}
+                            {(selectedUser.role === ROLES.PARTNER_INSTRUCTOR || selectedUser.institutionId) && (
+                                <div>
+                                    <label className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                                        <Building2 className="h-4 w-4" />
+                                        Institution
+                                    </label>
+                                    {selectedUserInstitution ? (
+                                        <div className="mt-2 p-3 border rounded-md bg-muted/30">
+                                            <div className="font-medium">{selectedUserInstitution.name}</div>
+                                            <div className="text-sm text-muted-foreground mt-1 flex items-center gap-2">
+                                                <MapPin className="h-3 w-3" />
+                                                {selectedUserInstitution.location || "Location not specified"}
+                                            </div>
+                                            {selectedUserInstitution.contactEmail && (
+                                                <div className="text-sm text-muted-foreground mt-1 flex items-center gap-2">
+                                                    <Mail className="h-3 w-3" />
+                                                    {selectedUserInstitution.contactEmail}
                                                 </div>
-                                            ))}
+                                            )}
+                                            <div className="mt-2 text-xs text-muted-foreground">
+                                                ID: {selectedUser.institutionId}
+                                            </div>
                                         </div>
+                                    ) : (
+                                        <p className="text-muted-foreground mt-2">Not assigned to an institution</p>
+                                    )}
+                                </div>
+                            )}
+
+                            {selectedUser.role === ROLES.PARTNER_INSTRUCTOR && selectedUser.permissions && (
+                                <div>
+                                    <label className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                                        <Shield className="h-4 w-4" />
+                                        Permissions
+                                    </label>
+                                    <div className="mt-2 space-y-2 p-3 bg-muted rounded-md">
+                                        {Object.entries(selectedUser.permissions).map(([key, value]) => (
+                                            <div key={key} className="flex items-center justify-between">
+                                                <span className="text-sm capitalize">{key.replace(/_/g, ' ')}</span>
+                                                {value ? (
+                                                    <CheckCircle className="h-4 w-4 text-green-600" />
+                                                ) : (
+                                                    <X className="h-4 w-4 text-red-600" />
+                                                )}
+                                            </div>
+                                        ))}
                                     </div>
-                                </>
+                                </div>
                             )}
 
                             <div>
@@ -637,102 +776,137 @@ export default function AdminUsers() {
 
                             <div>
                                 <label className="text-sm font-medium text-muted-foreground">User ID</label>
-                                <p className="font-mono text-xs text-muted-foreground">{selectedUser.id}</p>
+                                <p className="font-mono text-xs text-muted-foreground break-all">{selectedUser.id}</p>
                             </div>
                         </div>
 
                         <div className="mt-8 flex justify-end">
-                            <Button onClick={() => setSelectedUser(null)}>Close</Button>
+                            <Button onClick={() => {
+                                setSelectedUser(null);
+                                setSelectedUserInstitution(null);
+                            }}>Close</Button>
                         </div>
                     </div>
                 </div>
             )}
 
-            {/* Partner Instructor Assignment Modal */}
-            {showPartnerModal && (
+            {/* Role Change Modal */}
+            {showRoleModal && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-                    <div className="bg-background rounded-lg shadow-lg w-full max-w-lg p-6 relative animate-in fade-in zoom-in duration-200">
+                    <div className="bg-background rounded-lg shadow-lg w-full max-w-md p-6 relative animate-in fade-in zoom-in duration-200">
                         <button
-                            onClick={() => setShowPartnerModal(false)}
+                            onClick={() => setShowRoleModal(false)}
                             className="absolute top-4 right-4 text-muted-foreground hover:text-foreground"
                         >
                             <X className="h-5 w-5" />
                         </button>
 
-                        <h2 className="text-2xl font-bold mb-6">Assign Partner Instructor</h2>
+                        <h2 className="text-2xl font-bold mb-6">Change User Role</h2>
 
                         <div className="space-y-4">
                             <div>
-                                <label className="block text-sm font-medium mb-2">Institution</label>
-                                <select
-                                    value={partnerFormData.institutionId}
-                                    onChange={(e) => setPartnerFormData({ ...partnerFormData, institutionId: e.target.value })}
-                                    className="w-full rounded-md border border-input bg-background px-3 py-2 text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-                                >
-                                    <option value="">Select an institution</option>
-                                    {institutions.map(inst => (
-                                        <option key={inst.id} value={inst.id}>{inst.name}</option>
-                                    ))}
-                                </select>
+                                <p className="text-sm text-muted-foreground mb-2">
+                                    User: <span className="font-medium text-foreground">{roleModalData.targetUser?.email}</span>
+                                </p>
+                                <p className="text-sm text-muted-foreground">
+                                    Current Role: <span className="font-medium text-foreground">{getRoleDisplayName(roleModalData.targetUser?.role)}</span>
+                                </p>
                             </div>
 
                             <div>
-                                <label className="block text-sm font-medium mb-2">Permissions</label>
+                                <label className="block text-sm font-medium mb-2">Change to:</label>
                                 <div className="space-y-2">
-                                    <label className="flex items-center gap-2">
-                                        <input
-                                            type="checkbox"
-                                            checked={partnerFormData.permissions.view_institution_students}
-                                            onChange={(e) => setPartnerFormData({
-                                                ...partnerFormData,
-                                                permissions: { ...partnerFormData.permissions, view_institution_students: e.target.checked }
-                                            })}
-                                            className="rounded"
-                                        />
-                                        <span className="text-sm">View Institution Students</span>
-                                    </label>
-                                    <label className="flex items-center gap-2">
-                                        <input
-                                            type="checkbox"
-                                            checked={partnerFormData.permissions.view_institution_progress}
-                                            onChange={(e) => setPartnerFormData({
-                                                ...partnerFormData,
-                                                permissions: { ...partnerFormData.permissions, view_institution_progress: e.target.checked }
-                                            })}
-                                            className="rounded"
-                                        />
-                                        <span className="text-sm">View Institution Progress</span>
-                                    </label>
-                                    <label className="flex items-center gap-2">
-                                        <input
-                                            type="checkbox"
-                                            checked={partnerFormData.permissions.export_institution_data}
-                                            onChange={(e) => setPartnerFormData({
-                                                ...partnerFormData,
-                                                permissions: { ...partnerFormData.permissions, export_institution_data: e.target.checked }
-                                            })}
-                                            className="rounded"
-                                        />
-                                        <span className="text-sm">Export Institution Data</span>
-                                    </label>
+                                    {[ROLES.PARTNER_INSTRUCTOR, ROLES.INSTRUCTOR, ROLES.STUDENT].map(role => (
+                                        role !== roleModalData.targetUser?.role && (
+                                            <button
+                                                key={role}
+                                                onClick={() => setRoleModalData({ ...roleModalData, targetRole: role })}
+                                                className={cn(
+                                                    "w-full text-left p-3 rounded-md border transition-colors",
+                                                    roleModalData.targetRole === role
+                                                        ? "border-primary bg-primary/10"
+                                                        : "border-input hover:bg-accent"
+                                                )}
+                                            >
+                                                <div className="font-medium">{getRoleDisplayName(role)}</div>
+                                                <div className="text-sm text-muted-foreground mt-1">{getRoleDescription(role)}</div>
+                                            </button>
+                                        )
+                                    ))}
                                 </div>
-                            </div>
-
-                            <div>
-                                <label className="block text-sm font-medium mb-2">Reason (for audit log)</label>
-                                <textarea
-                                    value={partnerFormData.reason}
-                                    onChange={(e) => setPartnerFormData({ ...partnerFormData, reason: e.target.value })}
-                                    placeholder="Enter reason for assignment..."
-                                    rows={3}
-                                    className="w-full rounded-md border border-input bg-background px-3 py-2 text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-                                />
                             </div>
                         </div>
 
                         <div className="mt-8 flex justify-end gap-2">
-                            <Button variant="outline" onClick={() => setShowPartnerModal(false)}>Cancel</Button>
-                            <Button onClick={handlePartnerInstructorSubmit}>Assign</Button>
+                            <Button variant="outline" onClick={() => setShowRoleModal(false)}>Cancel</Button>
+                            <Button
+                                onClick={handleRoleChange}
+                                disabled={!roleModalData.targetRole}
+                                className="bg-purple-600 hover:bg-purple-700"
+                            >
+                                Change Role
+                            </Button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Permission Management Modal */}
+            {showPermissionModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+                    <div className="bg-background rounded-lg shadow-lg w-full max-w-md p-6 relative animate-in fade-in zoom-in duration-200">
+                        <button
+                            onClick={() => setShowPermissionModal(false)}
+                            className="absolute top-4 right-4 text-muted-foreground hover:text-foreground"
+                        >
+                            <X className="h-5 w-5" />
+                        </button>
+
+                        <h2 className="text-2xl font-bold mb-6">Manage Permissions</h2>
+
+                        <div className="space-y-4">
+                            <div>
+                                <p className="text-sm text-muted-foreground mb-4">
+                                    User: <span className="font-medium text-foreground">{permissionData.targetUser?.email}</span>
+                                </p>
+                            </div>
+
+                            <div className="space-y-3">
+                                {[
+                                    'view_assigned_courses',
+                                    'view_assigned_students',
+                                    'grade_assigned_assessments',
+                                    'provide_feedback',
+                                    'send_messages',
+                                    'create_announcements',
+                                    'view_course_content'
+                                ].map(permission => (
+                                    <label key={permission} className="flex items-center justify-between p-3 rounded-md border border-input hover:bg-accent transition-colors">
+                                        <div>
+                                            <span className="font-medium capitalize">{permission.replace(/_/g, ' ')}</span>
+                                        </div>
+                                        <input
+                                            type="checkbox"
+                                            checked={permissionData.permissions[permission] || false}
+                                            onChange={(e) => setPermissionData({
+                                                ...permissionData,
+                                                permissions: {
+                                                    ...permissionData.permissions,
+                                                    [permission]: e.target.checked
+                                                }
+                                            })}
+                                            className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
+                                        />
+                                    </label>
+                                ))}
+                            </div>
+                        </div>
+
+                        <div className="mt-8 flex justify-end gap-2">
+                            <Button variant="outline" onClick={() => setShowPermissionModal(false)}>Cancel</Button>
+                            <Button onClick={handlePermissionUpdate} className="bg-indigo-600 hover:bg-indigo-700">
+                                Update Permissions
+                            </Button>
                         </div>
                     </div>
                 </div>

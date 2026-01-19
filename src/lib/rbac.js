@@ -18,7 +18,17 @@ export const PERMISSIONS = {
     ENROLL_COURSES: 'enroll_courses',
     SUBMIT_ASSESSMENTS: 'submit_assessments',
     VIEW_OWN_PROGRESS: 'view_own_progress',
-
+    VIEW_OWN_GRADES: 'view_own_grades',
+    
+    // Partner Instructor (Mentor) Permissions
+    VIEW_ASSIGNED_COURSES: 'view_assigned_courses',
+    VIEW_ASSIGNED_STUDENTS: 'view_assigned_students',
+    GRADE_ASSIGNED_ASSESSMENTS: 'grade_assigned_assessments',
+    PROVIDE_FEEDBACK: 'provide_feedback',
+    SEND_MESSAGES: 'send_messages',
+    CREATE_ANNOUNCEMENTS: 'create_announcements',
+    VIEW_COURSE_CONTENT: 'view_course_content',
+    
     // Instructor Permissions
     CREATE_COURSES: 'create_courses',
     EDIT_OWN_COURSES: 'edit_own_courses',
@@ -26,22 +36,24 @@ export const PERMISSIONS = {
     VIEW_ALL_STUDENTS: 'view_all_students',
     VIEW_STUDENT_PROGRESS: 'view_student_progress',
     CREATE_ASSESSMENTS: 'create_assessments',
-    GRADE_ASSESSMENTS: 'grade_assessments',
-    CREATE_ANNOUNCEMENTS: 'create_announcements',
-
-    // Partner Instructor Permissions (granular, configurable)
-    VIEW_INSTITUTION_STUDENTS: 'view_institution_students',
-    VIEW_INSTITUTION_PROGRESS: 'view_institution_progress',
-    EXPORT_INSTITUTION_DATA: 'export_institution_data',
-
+    GRADE_ALL_ASSESSMENTS: 'grade_all_assessments',
+    MANAGE_PARTNER_INSTRUCTORS: 'manage_partner_instructors',
+    VIEW_COURSE_ANALYTICS: 'view_course_analytics',
+    MANAGE_ENROLLMENTS: 'manage_enrollments',
+    UPLOAD_MATERIALS: 'upload_materials',
+    ASSIGN_PARTNER_INSTRUCTORS: 'assign_partner_instructors',
+    
     // Admin Permissions
     MANAGE_USERS: 'manage_users',
     MANAGE_ROLES: 'manage_roles',
-    MANAGE_INSTITUTIONS: 'manage_institutions',
-    VIEW_AUDIT_LOGS: 'view_audit_logs',
     MANAGE_ALL_COURSES: 'manage_all_courses',
     MANAGE_ALL_ASSESSMENTS: 'manage_all_assessments',
-    SYSTEM_SETTINGS: 'system_settings'
+    VIEW_PLATFORM_ANALYTICS: 'view_platform_analytics',
+    MANAGE_SYSTEM_SETTINGS: 'manage_system_settings',
+    MANAGE_DEVICE_RESTRICTIONS: 'manage_device_restrictions',
+    MANAGE_GUEST_ACCOUNTS: 'manage_guest_accounts',
+    OVERRIDE_RESTRICTIONS: 'override_restrictions',
+    VIEW_AUDIT_LOGS: 'view_audit_logs'
 };
 
 // Default permissions for each role
@@ -50,25 +62,50 @@ export const DEFAULT_ROLE_PERMISSIONS = {
         PERMISSIONS.VIEW_COURSES,
         PERMISSIONS.ENROLL_COURSES,
         PERMISSIONS.SUBMIT_ASSESSMENTS,
-        PERMISSIONS.VIEW_OWN_PROGRESS
+        PERMISSIONS.VIEW_OWN_PROGRESS,
+        PERMISSIONS.VIEW_OWN_GRADES
+    ],
+
+    [ROLES.PARTNER_INSTRUCTOR]: [
+        // All student permissions
+        PERMISSIONS.VIEW_COURSES,
+        PERMISSIONS.VIEW_COURSE_CONTENT,
+        PERMISSIONS.VIEW_ASSIGNED_COURSES,
+        PERMISSIONS.VIEW_ASSIGNED_STUDENTS,
+        PERMISSIONS.GRADE_ASSIGNED_ASSESSMENTS,
+        PERMISSIONS.PROVIDE_FEEDBACK,
+        PERMISSIONS.SEND_MESSAGES,
+        PERMISSIONS.CREATE_ANNOUNCEMENTS
     ],
 
     [ROLES.INSTRUCTOR]: [
+        // All student permissions
         PERMISSIONS.VIEW_COURSES,
+        PERMISSIONS.ENROLL_COURSES,
+        PERMISSIONS.SUBMIT_ASSESSMENTS,
+        PERMISSIONS.VIEW_OWN_PROGRESS,
+        
+        // All partner instructor permissions
+        PERMISSIONS.VIEW_COURSE_CONTENT,
+        PERMISSIONS.VIEW_ASSIGNED_STUDENTS,
+        PERMISSIONS.GRADE_ASSIGNED_ASSESSMENTS,
+        PERMISSIONS.PROVIDE_FEEDBACK,
+        PERMISSIONS.SEND_MESSAGES,
+        PERMISSIONS.CREATE_ANNOUNCEMENTS,
+        
+        // Instructor-specific permissions
         PERMISSIONS.CREATE_COURSES,
         PERMISSIONS.EDIT_OWN_COURSES,
         PERMISSIONS.DELETE_OWN_COURSES,
         PERMISSIONS.VIEW_ALL_STUDENTS,
         PERMISSIONS.VIEW_STUDENT_PROGRESS,
         PERMISSIONS.CREATE_ASSESSMENTS,
-        PERMISSIONS.GRADE_ASSESSMENTS,
-        PERMISSIONS.CREATE_ANNOUNCEMENTS
-    ],
-
-    [ROLES.PARTNER_INSTRUCTOR]: [
-        // Default minimal permissions - actual permissions set by admin
-        PERMISSIONS.VIEW_INSTITUTION_STUDENTS,
-        PERMISSIONS.VIEW_INSTITUTION_PROGRESS
+        PERMISSIONS.GRADE_ALL_ASSESSMENTS,
+        PERMISSIONS.MANAGE_PARTNER_INSTRUCTORS,
+        PERMISSIONS.VIEW_COURSE_ANALYTICS,
+        PERMISSIONS.MANAGE_ENROLLMENTS,
+        PERMISSIONS.UPLOAD_MATERIALS,
+        PERMISSIONS.ASSIGN_PARTNER_INSTRUCTORS
     ],
 
     [ROLES.ADMIN]: Object.values(PERMISSIONS) // Admins have all permissions
@@ -150,7 +187,11 @@ export const canAccessRoute = (userData, route) => {
         '/admin': [ROLES.ADMIN],
         '/instructor': [ROLES.INSTRUCTOR, ROLES.ADMIN],
         '/partner-instructor': [ROLES.PARTNER_INSTRUCTOR, ROLES.ADMIN],
-        '/student': [ROLES.STUDENT, ROLES.INSTRUCTOR, ROLES.ADMIN]
+        '/student': [ROLES.STUDENT, ROLES.INSTRUCTOR, ROLES.PARTNER_INSTRUCTOR, ROLES.ADMIN],
+        '/dashboard': [ROLES.STUDENT, ROLES.INSTRUCTOR, ROLES.PARTNER_INSTRUCTOR, ROLES.ADMIN],
+        '/courses': [ROLES.STUDENT, ROLES.INSTRUCTOR, ROLES.PARTNER_INSTRUCTOR, ROLES.ADMIN],
+        '/analytics': [ROLES.INSTRUCTOR, ROLES.ADMIN],
+        '/settings': [ROLES.ADMIN]
     };
 
     // Find matching route pattern
@@ -173,13 +214,13 @@ export const getUserHomeRoute = (userData) => {
     if (!userData || !userData.role) return '/login';
 
     const homeRoutes = {
-        [ROLES.ADMIN]: '/admin',
-        [ROLES.INSTRUCTOR]: '/instructor',
-        [ROLES.PARTNER_INSTRUCTOR]: '/partner-instructor',
-        [ROLES.STUDENT]: '/student'
+        [ROLES.ADMIN]: '/admin/dashboard',
+        [ROLES.INSTRUCTOR]: '/instructor/dashboard',
+        [ROLES.PARTNER_INSTRUCTOR]: '/partner-instructor/dashboard',
+        [ROLES.STUDENT]: '/student/dashboard'
     };
 
-    return homeRoutes[userData.role] || '/student';
+    return homeRoutes[userData.role] || '/student/dashboard';
 };
 
 /**
@@ -189,20 +230,95 @@ export const getUserHomeRoute = (userData) => {
  * @returns {boolean}
  */
 export const isValidRoleChange = (fromRole, toRole) => {
-    // Only admins can change roles (enforced elsewhere)
-    // This validates the role transition logic
-
     const validRoles = Object.values(ROLES);
     if (!validRoles.includes(fromRole) || !validRoles.includes(toRole)) {
         return false;
     }
 
-    // Can't change to/from admin (admin accounts managed separately)
-    if (toRole === ROLES.ADMIN || fromRole === ROLES.ADMIN) {
+    // Only admins can assign admin role
+    if (toRole === ROLES.ADMIN) {
+        return false;
+    }
+
+    // Can't demote admin (should be done by another admin)
+    if (fromRole === ROLES.ADMIN) {
         return false;
     }
 
     return true;
+};
+
+/**
+ * Get role hierarchy (higher roles include permissions of lower roles)
+ * @param {string} role - User role
+ * @returns {string[]} Array of roles that this role has access to
+ */
+export const getRoleHierarchy = (role) => {
+    const hierarchy = {
+        [ROLES.ADMIN]: [ROLES.ADMIN, ROLES.INSTRUCTOR, ROLES.PARTNER_INSTRUCTOR, ROLES.STUDENT],
+        [ROLES.INSTRUCTOR]: [ROLES.INSTRUCTOR, ROLES.PARTNER_INSTRUCTOR, ROLES.STUDENT],
+        [ROLES.PARTNER_INSTRUCTOR]: [ROLES.PARTNER_INSTRUCTOR, ROLES.STUDENT],
+        [ROLES.STUDENT]: [ROLES.STUDENT]
+    };
+    
+    return hierarchy[role] || [role];
+};
+
+/**
+ * Check if user can manage another user based on role hierarchy
+ * @param {Object} currentUser - Current user data
+ * @param {Object} targetUser - Target user data
+ * @returns {boolean}
+ */
+export const canManageUser = (currentUser, targetUser) => {
+    if (!currentUser || !targetUser) return false;
+    
+    // Admins can manage everyone
+    if (currentUser.role === ROLES.ADMIN) return true;
+    
+    // Instructors can manage partner instructors and students
+    if (currentUser.role === ROLES.INSTRUCTOR) {
+        return [ROLES.PARTNER_INSTRUCTOR, ROLES.STUDENT].includes(targetUser.role);
+    }
+    
+    // Partner instructors can only manage their assigned students (handled separately)
+    if (currentUser.role === ROLES.PARTNER_INSTRUCTOR) {
+        return targetUser.role === ROLES.STUDENT;
+    }
+    
+    return false;
+};
+
+/**
+ * Get role display name
+ * @param {string} role - Role constant
+ * @returns {string} Display name
+ */
+export const getRoleDisplayName = (role) => {
+    const displayNames = {
+        [ROLES.STUDENT]: 'Student',
+        [ROLES.PARTNER_INSTRUCTOR]: 'Partner Instructor',
+        [ROLES.INSTRUCTOR]: 'Instructor',
+        [ROLES.ADMIN]: 'Admin'
+    };
+    
+    return displayNames[role] || role;
+};
+
+/**
+ * Get role description
+ * @param {string} role - Role constant
+ * @returns {string} Description
+ */
+export const getRoleDescription = (role) => {
+    const descriptions = {
+        [ROLES.STUDENT]: 'Can view enrolled courses, submit assignments, and track progress',
+        [ROLES.PARTNER_INSTRUCTOR]: 'Can view assigned students, grade assignments, and provide feedback',
+        [ROLES.INSTRUCTOR]: 'Can create and manage courses, assignments, and partner instructors',
+        [ROLES.ADMIN]: 'Has full system access and can manage all users and settings'
+    };
+    
+    return descriptions[role] || '';
 };
 
 /**
@@ -215,9 +331,13 @@ export const validatePartnerInstructorPermissions = (permissions) => {
 
     // Ensure only valid permissions are set
     const validPermissions = [
-        PERMISSIONS.VIEW_INSTITUTION_STUDENTS,
-        PERMISSIONS.VIEW_INSTITUTION_PROGRESS,
-        PERMISSIONS.EXPORT_INSTITUTION_DATA
+        PERMISSIONS.VIEW_ASSIGNED_COURSES,
+        PERMISSIONS.VIEW_ASSIGNED_STUDENTS,
+        PERMISSIONS.GRADE_ASSIGNED_ASSESSMENTS,
+        PERMISSIONS.PROVIDE_FEEDBACK,
+        PERMISSIONS.SEND_MESSAGES,
+        PERMISSIONS.CREATE_ANNOUNCEMENTS,
+        PERMISSIONS.VIEW_COURSE_CONTENT
     ];
 
     for (const key in permissions) {

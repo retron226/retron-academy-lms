@@ -62,6 +62,8 @@ export default function ModuleEditor({ isOpen, onClose, onSave, initialData }) {
 
             onSave({ ...module, content, quizData });
         } catch (error) {
+            console.log(module);
+
             console.error("Error saving module:", error);
             alert("Failed to save module");
         } finally {
