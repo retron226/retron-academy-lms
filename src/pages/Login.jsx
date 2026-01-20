@@ -1,10 +1,10 @@
-
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { signInWithEmailAndPassword, sendPasswordResetEmail } from "firebase/auth";
-import { auth } from "../lib/firebase";
+import { auth, db } from "../lib/firebase";
+import { doc, getDoc } from "firebase/firestore";
 import { useNavigate, Link, useLocation } from "react-router-dom";
 import { Eye, EyeOff, Loader2, X } from "lucide-react";
-
+import { getUserHomeRoute } from "../lib/rbac";
 import logo from "../assets/retron-logo-full.jpg";
 
 export default function Login() {
@@ -37,11 +37,51 @@ export default function Login() {
         }
 
         try {
-            await signInWithEmailAndPassword(auth, email, password);
-            navigate("/");
+            const userCredential = await signInWithEmailAndPassword(auth, email, password);
+            const userId = userCredential.user.uid;
+
+            console.log("✅ Login successful, fetching user data for:", userId);
+
+            // Get user data from Firestore to determine role
+            const userDoc = await getDoc(doc(db, "users", userId));
+
+            if (userDoc.exists()) {
+                const userData = userDoc.data();
+                console.log("📋 User data found:", {
+                    role: userData.role,
+                    email: userData.email,
+                    name: userData.fullName
+                });
+
+                // Get the correct home route based on user role
+                const homeRoute = getUserHomeRoute(userData);
+                console.log("📍 Redirecting to home route:", homeRoute);
+
+                // Redirect to the appropriate dashboard
+                navigate(homeRoute, { replace: true });
+            } else {
+                console.warn("⚠️ User document not found, redirecting to student dashboard");
+                // If no user document exists, redirect to student as default
+                navigate("/student/dashboard", { replace: true });
+            }
+
         } catch (err) {
-            setError("Failed to log in. Please check your credentials.");
-            console.error(err);
+            console.error("❌ Login error:", err);
+
+            let errorMessage = "Failed to log in. Please check your credentials.";
+
+            // More specific error messages
+            if (err.code === 'auth/invalid-credential' || err.code === 'auth/wrong-password') {
+                errorMessage = "Invalid email or password.";
+            } else if (err.code === 'auth/user-not-found') {
+                errorMessage = "No account found with this email.";
+            } else if (err.code === 'auth/too-many-requests') {
+                errorMessage = "Too many failed attempts. Please try again later.";
+            } else if (err.code === 'auth/network-request-failed') {
+                errorMessage = "Network error. Please check your connection.";
+            }
+
+            setError(errorMessage);
         } finally {
             setLoading(false);
         }

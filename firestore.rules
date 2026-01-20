@@ -11,6 +11,10 @@ service cloud.firestore {
       return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
     }
     
+    function getUserInstitutionId() {
+      return getUserData().institutionId;
+    }
+    
     function hasRole(role) {
       return isAuthenticated() && getUserData().role == role;
     }
@@ -23,7 +27,7 @@ service cloud.firestore {
       return hasRole('instructor');
     }
     
-    function isPartnerInstructor() {
+    function isMentor() {
       return hasRole('partner_instructor');
     }
     
@@ -31,32 +35,95 @@ service cloud.firestore {
       return hasRole('student');
     }
     
-    // Check if user has a specific permission
-    function hasPermission(permission) {
-      // Admins have all permissions
-      return getUserData().role == 'admin' 
-        || (getUserData().permissions != null && getUserData().permissions[permission] == true);
+    // Check if mentor has specific permission
+    function mentorHasPermission(permission) {
+      if (!isMentor()) return false;
+      let mentorData = getUserData();
+      return mentorData.permissions != null && mentorData.permissions[permission] == true;
+    }
+    
+    // Check if mentor can view student (student belongs to mentor's institution)
+    function canMentorViewStudent(studentId) {
+      if (!isMentor()) return false;
+      
+      let mentorInstitutionId = getUserInstitutionId();
+      if (mentorInstitutionId == null) return false;
+      
+      let studentData = get(/databases/$(database)/documents/users/$(studentId)).data;
+      
+      // Check if student is in mentor's institution
+      // Option 1: Student has institutionId that matches mentor's
+      if (studentData.institutionId == mentorInstitutionId) return true;
+      
+      // Option 2: Student is enrolled in mentor's assigned courses
+      let mentorAssignedCourses = getUserData().assignedCourses;
+      if (mentorAssignedCourses != null) {
+        let studentEnrollments = get(/databases/$(database)/documents/users/$(studentId)/enrollments);
+        if (studentEnrollments.exists()) {
+          let studentCourseIds = studentEnrollments.data.courseIds;
+          if (studentCourseIds != null) {
+            // Check if student is enrolled in any of mentor's assigned courses
+            for (let i = 0; i < studentCourseIds.size(); i++) {
+              if (mentorAssignedCourses[studentCourseIds[i]] != null) {
+                return true;
+              }
+            }
+          }
+        }
+      }
+      
+      return false;
+    }
+    
+    // Check if mentor can view/grade course
+    function canMentorAccessCourse(courseId) {
+      if (!isMentor()) return false;
+      
+      let mentorData = getUserData();
+      let mentorAssignedCourses = mentorData.assignedCourses;
+      
+      // Check if course is in mentor's assigned courses
+      return mentorAssignedCourses != null && mentorAssignedCourses[courseId] != null;
+    }
+    
+    // Check if user is course instructor (owner or co-instructor)
+    function isCourseInstructor(courseId) {
+      if (!isAuthenticated()) return false;
+      
+      let courseData = get(/databases/$(database)/documents/courses/$(courseId)).data;
+      return courseData.instructorId == request.auth.uid ||
+        (courseData.coInstructorIds != null && request.auth.uid in courseData.coInstructorIds);
     }
     
     // Users collection
     match /users/{userId} {
-      // Allow read for all authenticated users (to display names, etc.)
-      allow read: if isAuthenticated();
+      // Allow read for:
+      // 1. Users reading their own data
+      // 2. Admins (can view all)
+      // 3. Instructors (can view all students)
+      // 4. Mentors with permission AND student is in their institution/assigned courses
+      allow read: if isAuthenticated() && (
+        request.auth.uid == userId 
+        || isAdmin()
+        || isInstructor()
+        || (isMentor() && mentorHasPermission('view_assigned_students') && canMentorViewStudent(userId))
+      );
       
-      // Create: Only allow if creating own account AND role is 'student'
-      // This enforces student-only signup at the database level
+      // Create: Only allow if creating own account (signup)
       allow create: if isAuthenticated() 
                     && request.auth.uid == userId;
-                    // && request.resource.data.role == 'student';
       
-      // Update: Users can update their own non-role/non-permission data
-      // Admins can update anything
-      // Role and permissions can ONLY be changed by admins
+      // Update rules:
+      // 1. Users can update their own profile (but not role/permissions)
+      // 2. Admins can update anything (including roles/permissions)
+      // 3. Instructors cannot change user roles/permissions
       allow update: if isAuthenticated() && (
-        // User updating their own data (but not role or permissions)
+        // User updating their own profile (excluding role and permissions)
         (request.auth.uid == userId 
          && request.resource.data.role == resource.data.role
-         && request.resource.data.get('permissions', {}) == resource.data.get('permissions', {}))
+         && request.resource.data.get('permissions', {}) == resource.data.get('permissions', {})
+         && request.resource.data.get('institutionId', null) == resource.data.get('institutionId', null)
+         && request.resource.data.get('assignedCourses', {}) == resource.data.get('assignedCourses', {}))
         // OR admin updating anything
         || isAdmin()
       );
@@ -68,11 +135,38 @@ service cloud.firestore {
       match /courseProgress/{courseId} {
         allow read: if isAuthenticated() && (
           request.auth.uid == userId 
-          || isInstructor() 
           || isAdmin()
-          || (isPartnerInstructor() && hasPermission('view_institution_progress'))
+          || isInstructor()
+          || (isMentor() && mentorHasPermission('view_institution_progress') && canMentorViewStudent(userId) && canMentorAccessCourse(courseId))
         );
         allow write: if isAuthenticated() && (request.auth.uid == userId || isAdmin());
+      }
+      
+      // Enrollments subcollection
+      match /enrollments/{enrollmentId} {
+        allow read: if isAuthenticated() && (
+          request.auth.uid == userId 
+          || isAdmin()
+          || isInstructor()
+          || (isMentor() && mentorHasPermission('view_assigned_students') && canMentorViewStudent(userId))
+        );
+        allow write: if isAuthenticated() && (isAdmin() || isInstructor());
+      }
+      
+      // Assessments subcollection (student submissions)
+      match /assessments/{assessmentId} {
+        allow read: if isAuthenticated() && (
+          request.auth.uid == userId 
+          || isAdmin()
+          || isInstructor()
+          || (isMentor() && mentorHasPermission('grade_assigned_assessments') && canMentorViewStudent(userId))
+        );
+        allow write: if isAuthenticated() && (
+          request.auth.uid == userId // Student submitting
+          || isAdmin()
+          || isInstructor()
+          || (isMentor() && mentorHasPermission('grade_assigned_assessments') && canMentorViewStudent(userId)) // Mentor grading
+        );
       }
     }
     
@@ -95,65 +189,149 @@ service cloud.firestore {
     
     // Courses collection
     match /courses/{courseId} {
-      // Anyone authenticated can read course basics
-      allow read: if isAuthenticated();
+      // Allow read for:
+      // 1. All authenticated users (for browsing)
+      // 2. Mentors can view if assigned to the course
+      allow read: if isAuthenticated() && (
+        true // All authenticated users can view courses
+        || (isMentor() && canMentorAccessCourse(courseId))
+      );
       
-      // Instructors and admins can create courses
-      // Partner instructors CANNOT create courses
+      // Create: Only instructors and admins can create courses
       allow create: if isInstructor() || isAdmin();
       
-      // Instructors can update/delete their own courses, admins can update/delete any
-      // Co-Instructors can also update course (Edit access) but NOT delete
-      allow update: if (isInstructor() && (resource.data.instructorId == request.auth.uid || 
-        (resource.data.coInstructorIds != null && request.auth.uid in resource.data.coInstructorIds))) 
-        || isAdmin();
-
-      allow delete: if (isInstructor() && resource.data.instructorId == request.auth.uid) || isAdmin();
+      // Update rules:
+      // 1. Course instructor (owner) can update
+      // 2. Co-instructors can update (but not delete)
+      // 3. Admins can update anything
+      // 4. Mentors CANNOT update courses
+      allow update: if (isInstructor() && isCourseInstructor(courseId)) 
+                    || isAdmin();
       
-      // Sections subcollection
+      // Delete rules:
+      // 1. Only course owner (main instructor) can delete
+      // 2. Admins can delete
+      // 3. Co-instructors and mentors CANNOT delete
+      allow delete: if (isInstructor() && get(/databases/$(database)/documents/courses/$(courseId)).data.instructorId == request.auth.uid) 
+                    || isAdmin();
+      
+      // Sections subcollection (course content)
       match /sections/{sectionId} {
-        allow read: if isAuthenticated();
-        // Allow Owner OR Co-Instructor to manage sections
-        allow write: if (isInstructor() && 
-            (get(/databases/$(database)/documents/courses/$(courseId)).data.instructorId == request.auth.uid ||
-            (get(/databases/$(database)/documents/courses/$(courseId)).data.coInstructorIds != null && 
-             request.auth.uid in get(/databases/$(database)/documents/courses/$(courseId)).data.coInstructorIds)
-            )) || isAdmin();
+        allow read: if isAuthenticated() && (
+          true // All authenticated users can view content
+          || (isMentor() && canMentorAccessCourse(courseId))
+        );
+        // Only course instructors and admins can modify content
+        allow write: if (isInstructor() && isCourseInstructor(courseId)) 
+                      || isAdmin();
+      }
+      
+      // Course materials
+      match /materials/{materialId} {
+        allow read: if isAuthenticated() && (
+          true // All authenticated users can view materials
+          || (isMentor() && canMentorAccessCourse(courseId))
+        );
+        // Only course instructors and admins can upload/manage materials
+        allow write: if (isInstructor() && isCourseInstructor(courseId)) 
+                      || isAdmin();
+      }
+      
+      // Course announcements
+      match /announcements/{announcementId} {
+        allow read: if isAuthenticated() && (
+          true // All authenticated users can view announcements
+          || (isMentor() && canMentorAccessCourse(courseId))
+        );
+        allow create: if isInstructor() || isAdmin() || (isMentor() && mentorHasPermission('create_announcements') && canMentorAccessCourse(courseId));
+        allow update, delete: if (isInstructor() && isCourseInstructor(courseId)) 
+                              || isAdmin();
+      }
+      
+      // Course assignments
+      match /assignments/{assignmentId} {
+        allow read: if isAuthenticated() && (
+          true // All authenticated users can view assignments
+          || (isMentor() && canMentorAccessCourse(courseId))
+        );
+        // Only instructors and admins can create assignments
+        allow create: if (isInstructor() && isCourseInstructor(courseId)) 
+                      || isAdmin();
+        allow update, delete: if (isInstructor() && isCourseInstructor(courseId)) 
+                              || isAdmin();
+      }
+      
+      // Course quizzes
+      match /quizzes/{quizId} {
+        allow read: if isAuthenticated() && (
+          true // All authenticated users can view quizzes
+          || (isMentor() && canMentorAccessCourse(courseId))
+        );
+        // Only instructors and admins can create quizzes
+        allow create: if (isInstructor() && isCourseInstructor(courseId)) 
+                      || isAdmin();
+        allow update, delete: if (isInstructor() && isCourseInstructor(courseId)) 
+                              || isAdmin();
       }
     }
-
-    // Assessments collection
+    
+    // Global assessments collection (for cross-course assessments)
     match /assessments/{assessmentId} {
       allow read: if isAuthenticated();
       allow create: if isInstructor() || isAdmin();
       allow update, delete: if (isInstructor() && resource.data.instructorId == request.auth.uid) || isAdmin();
       
+      // Assessment submissions
       match /submissions/{submissionId} {
-        allow read: if isAuthenticated() && (request.auth.uid == submissionId || isInstructor() || isAdmin());
+        allow read: if isAuthenticated() && (
+          request.auth.uid == submissionId 
+          || isInstructor() 
+          || isAdmin()
+          || (isMentor() && mentorHasPermission('grade_assigned_assessments') && canMentorViewStudent(submissionId))
+        );
         allow create, update: if isAuthenticated() && request.auth.uid == submissionId;
       }
     }
-
-    // Announcements collection
+    
+    // Global announcements collection
     match /announcements/{announcementId} {
       allow read: if isAuthenticated();
-      allow create: if isInstructor() || isAdmin();
+      allow create: if isInstructor() || isAdmin() || (isMentor() && mentorHasPermission('create_announcements'));
       allow update, delete: if (isInstructor() && resource.data.instructorId == request.auth.uid) || isAdmin();
     }
+    
+    // Messages collection (for mentor-student communication)
+    match /messages/{messageId} {
+      allow read: if isAuthenticated() && (
+        request.auth.uid == resource.data.senderId
+        || request.auth.uid == resource.data.receiverId
+        || isAdmin()
+        || (isMentor() && mentorHasPermission('send_messages') && 
+            (resource.data.senderId == request.auth.uid || canMentorViewStudent(resource.data.receiverId)))
+      );
+      allow create: if isAuthenticated() && (
+        request.auth.uid == request.resource.data.senderId
+        && (isStudent() 
+            || isInstructor() 
+            || isAdmin() 
+            || (isMentor() && mentorHasPermission('send_messages')))
+      );
+      allow update, delete: if isAdmin();
+    }
+    
     // Invitations collection
     match /invitations/{invitationId} {
-      // Create: Allowed for Instructors (inviter)
-      allow create: if isAuthenticated() && isInstructor(); // Enforce inviter is instructor
+      // Create: Allowed for Instructors and Admins (to invite mentors/co-instructors)
+      allow create: if isAuthenticated() && (isInstructor() || isAdmin());
       
-      // Read: Allow all authenticated users checking for their own invites, 
-      // AND allow Instructors to see all invitations (to check for duplicates/manage team)
+      // Read: Users can see their own invites
       allow read: if isAuthenticated() && (
         resource.data.inviteeEmail == request.auth.token.email ||
-        isInstructor() || isAdmin()
+        isInstructor() || 
+        isAdmin()
       );
       
-      // Update: Allowed if auth.token.email == inviteeEmail (to accept/reject) 
-      // OR inviter can maybe cancel? Let's just allow invitee to respond for now.
+      // Update: Invitee can accept/reject
       allow update: if isAuthenticated() && (
         resource.data.inviteeEmail == request.auth.token.email
       );
@@ -162,6 +340,32 @@ service cloud.firestore {
       allow delete: if isAuthenticated() && (
         resource.data.inviterId == request.auth.uid || isAdmin()
       );
+    }
+    
+    // System settings collection (admin only)
+    match /settings/{settingId} {
+      allow read: if isAdmin();
+      allow write: if isAdmin();
+    }
+    
+    // Analytics collection
+    match /analytics/{analyticId} {
+      allow read: if isAuthenticated() && (
+        isAdmin()
+        || isInstructor()
+        || (isMentor() && mentorHasPermission('view_institution_progress'))
+      );
+      allow write: if isAdmin(); // Only system/admins can write analytics
+    }
+    
+    // Mentor assignments collection (tracks which mentors are assigned to which courses)
+    match /mentorAssignments/{assignmentId} {
+      allow read: if isAuthenticated() && (
+        isAdmin()
+        || isInstructor()
+        || isMentor()
+      );
+      allow write: if isAdmin() || isInstructor(); // Only admins/instructors can assign mentors
     }
   }
 }

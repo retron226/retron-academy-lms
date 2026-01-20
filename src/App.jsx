@@ -5,6 +5,7 @@ import { ProtectedRoute } from "./components/ProtectedRoute";
 import Layout from "./components/Layout";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { Loader2 } from "lucide-react";
+import { ModalProvider, ToastProvider } from "./contexts/ModalContext";
 
 // Lazy load pages for performance (Code Splitting)
 const Login = React.lazy(() => import("./pages/Login"));
@@ -31,72 +32,77 @@ function App() {
   return (
     <Router>
       <ErrorBoundary>
-        <AuthProvider>
-          <Suspense fallback={<PageLoader />}>
-            <Routes>
-              <Route path="/login" element={<Login />} />
-              <Route path="/signup" element={<Signup />} />
-              <Route path="/reset-password" element={<ResetPassword />} />
+        <ModalProvider>
+          <ToastProvider>
+            <AuthProvider>
+              <Suspense fallback={<PageLoader />}>
+                <Routes>
+                  <Route path="/login" element={<Login />} />
+                  <Route path="/signup" element={<Signup />} />
+                  <Route path="/reset-password" element={<ResetPassword />} />
 
 
-              {/* Legal Pages (Public) */}
-              <Route path="/terms" element={<Layout><Terms /></Layout>} />
-              <Route path="/privacy" element={<Layout><Privacy /></Layout>} />
+                  {/* Legal Pages (Public) */}
+                  <Route path="/terms" element={<Layout><Terms /></Layout>} />
+                  <Route path="/privacy" element={<Layout><Privacy /></Layout>} />
 
-              <Route element={<Layout />}>
-                <Route
-                  path="/profile"
-                  element={
-                    <ProtectedRoute>
-                      <Profile />
-                    </ProtectedRoute>
-                  }
-                />
-                <Route
-                  path="/admin/*"
-                  element={
-                    <ProtectedRoute allowedRoles={['admin']}>
-                      <AdminDashboard />
-                    </ProtectedRoute>
-                  }
-                />
-                <Route
-                  path="/instructor/*"
-                  element={
-                    <ProtectedRoute allowedRoles={['instructor']}>
-                      <InstructorDashboard />
-                    </ProtectedRoute>
-                  }
-                />
-                <Route
-                  path="/partner-instructor/*"
-                  element={
-                    <ProtectedRoute allowedRoles={['partner_instructor']}>
-                      <PartnerInstructorDashboard />
-                    </ProtectedRoute>
-                  }
-                />
-                <Route
-                  path="/student/*"
-                  element={
-                    <ProtectedRoute allowedRoles={['student']}>
-                      <StudentDashboard />
-                    </ProtectedRoute>
-                  }
-                />
-                <Route path="/profile" element={<ProtectedRoute allowedRoles={['admin', 'instructor', 'partner_instructor', 'student']}><Profile /></ProtectedRoute>} />
-                <Route path="/test-setup" element={<TestSetup />} />
-              </Route>
+                  <Route element={<Layout />}>
+                    <Route
+                      path="/profile"
+                      element={
+                        <ProtectedRoute>
+                          <Profile />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="/admin/*"
+                      element={
+                        <ProtectedRoute allowedRoles={['admin']}>
+                          <AdminDashboard />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="/instructor/*"
+                      element={
+                        <ProtectedRoute allowedRoles={['instructor']}>
+                          <InstructorDashboard />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="/partner-instructor/*"
+                      element={
+                        <ProtectedRoute allowedRoles={['partner_instructor']}>
+                          <PartnerInstructorDashboard />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="/student/*"
+                      element={
+                        <ProtectedRoute allowedRoles={['student']}>
+                          <StudentDashboard />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route path="/profile" element={<ProtectedRoute allowedRoles={['admin', 'instructor', 'partner_instructor', 'student']}><Profile /></ProtectedRoute>} />
+                    <Route path="/test-setup" element={<TestSetup />} />
+                  </Route>
 
-              {/* Default redirect based on role is handled in ProtectedRoute, 
+                  {/* Default redirect based on role is handled in ProtectedRoute, 
                   but for root path we can redirect to a default or landing page.
                   For now, let's redirect to student dashboard as default or login.
               */}
-              <Route path="/" element={<Navigate to="/student" replace />} />
-              <Route path="*" element={<Navigate to="/" replace />} />
-            </Routes>
-          </Suspense>
-        </AuthProvider>
+                  <Route path="/" element={<Navigate to="/student" replace />} />
+                  <Route path="*" element={<Navigate to="/" replace />} />
+                </Routes>
+              </Suspense>
+
+            </AuthProvider>
+          </ToastProvider>
+        </ModalProvider>
       </ErrorBoundary>
     </Router>
   );

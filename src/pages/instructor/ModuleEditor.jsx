@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
@@ -6,13 +6,66 @@ import { storage } from "../../lib/firebase";
 import { Loader2, X } from "lucide-react";
 
 export default function ModuleEditor({ isOpen, onClose, onSave, initialData }) {
-    const [module, setModule] = useState(initialData);
-    const [loading, setLoading] = useState(false);
-    const [videoUrl, setVideoUrl] = useState("");
+    // Initialize module with default values to avoid undefined
+    const [module, setModule] = useState({
+        title: "",
+        type: "text",
+        content: "",
+        duration: "10 min",
+        description: "",
+        isActive: true,
+        // Initialize all possible fields with defaults
+        videoUrl: "",
+        transcript: "",
+        attachments: [],
+        tags: [],
+        objectives: [],
+        // Quiz specific fields
+        quizQuestions: [],
+        ...initialData // Spread initialData last to override defaults
+    });
 
-    // Quiz State
-    const [quizQuestions, setQuizQuestions] = useState(initialData.quizData || []);
-    const [currentQuestion, setCurrentQuestion] = useState({ question: "", options: ["", "", "", ""], correctOption: 0 });
+    const [loading, setLoading] = useState(false);
+    const [videoUrl, setVideoUrl] = useState(initialData?.content || "");
+
+    // Quiz State - Initialize properly
+    const [quizQuestions, setQuizQuestions] = useState(initialData?.quizQuestions || initialData?.quizData || []);
+    const [currentQuestion, setCurrentQuestion] = useState({
+        question: "",
+        options: ["", "", "", ""],
+        correctOption: 0
+    });
+
+    // Update state when initialData changes
+    useEffect(() => {
+        if (initialData) {
+            setModule(prev => ({
+                ...prev,
+                ...initialData,
+                // Ensure all fields exist
+                title: initialData.title || "",
+                type: initialData.type || "text",
+                content: initialData.content || "",
+                duration: initialData.duration || "10 min",
+                description: initialData.description || "",
+                isActive: initialData.isActive !== false,
+                videoUrl: initialData.videoUrl || "",
+                transcript: initialData.transcript || "",
+                attachments: initialData.attachments || [],
+                tags: initialData.tags || [],
+                objectives: initialData.objectives || [],
+                quizQuestions: initialData.quizQuestions || initialData.quizData || []
+            }));
+
+            if (initialData.type === 'video') {
+                setVideoUrl(initialData.content || "");
+            }
+
+            if (initialData.type === 'quiz') {
+                setQuizQuestions(initialData.quizQuestions || initialData.quizData || []);
+            }
+        }
+    }, [initialData]);
 
     if (!isOpen) return null;
 
@@ -35,7 +88,8 @@ export default function ModuleEditor({ isOpen, onClose, onSave, initialData }) {
 
     const handleAddQuestion = () => {
         if (!currentQuestion.question.trim()) return;
-        setQuizQuestions([...quizQuestions, currentQuestion]);
+        const newQuestions = [...quizQuestions, currentQuestion];
+        setQuizQuestions(newQuestions);
         setCurrentQuestion({ question: "", options: ["", "", "", ""], correctOption: 0 });
     };
 
@@ -48,22 +102,52 @@ export default function ModuleEditor({ isOpen, onClose, onSave, initialData }) {
         setLoading(true);
 
         try {
-            let content = module.content;
-            let quizData = null;
+            let content = module.content || "";
+            let finalQuizQuestions = null;
 
-            if (module.type === 'video' && videoUrl) {
-                content = videoUrl;
+            if (module.type === 'video') {
+                content = videoUrl || module.content || "";
             }
 
             if (module.type === 'quiz') {
-                quizData = quizQuestions;
+                finalQuizQuestions = quizQuestions.map(q => ({
+                    question: q.question || "",
+                    options: q.options || ["", "", "", ""],
+                    correctOption: q.correctOption || 0
+                }));
                 content = "Quiz Module"; // Placeholder content for quiz type
             }
 
-            onSave({ ...module, content, quizData });
+            // Prepare the data object with all fields defined
+            const saveData = {
+                id: module.id || Date.now().toString(),
+                title: module.title || "",
+                type: module.type || "text",
+                content: content,
+                duration: module.duration || "10 min",
+                description: module.description || "",
+                isActive: module.isActive !== false,
+                // Include all fields with defaults
+                videoUrl: module.videoUrl || "",
+                transcript: module.transcript || "",
+                attachments: module.attachments || [],
+                tags: module.tags || [],
+                objectives: module.objectives || [],
+                // Only include quiz data if it's a quiz
+                ...(module.type === 'quiz' && { quizQuestions: finalQuizQuestions }),
+                // Remove undefined fields
+            };
+
+            // Clean up the data - remove any undefined or null values
+            const cleanedData = Object.fromEntries(
+                Object.entries(saveData).filter(([_, value]) => value !== undefined && value !== null)
+            );
+
+            console.log("Saving module data:", cleanedData);
+            onSave(cleanedData);
         } catch (error) {
             console.error("Error saving module:", error);
-            alert("Failed to save module");
+            alert(`Failed to save module: ${error.message}`);
         } finally {
             setLoading(false);
         }
@@ -74,9 +158,9 @@ export default function ModuleEditor({ isOpen, onClose, onSave, initialData }) {
             <div className="bg-background w-full max-w-lg rounded-lg shadow-lg p-6 max-h-[90vh] overflow-y-auto">
                 <div className="flex items-center justify-between mb-4">
                     <h2 className="text-xl font-bold">
-                        {module.type === 'video' && "Add Video Lesson"}
-                        {module.type === 'text' && "Add Text Lesson"}
-                        {module.type === 'quiz' && "Add Quiz"}
+                        {module.type === 'video' && (initialData?.id ? "Edit Video Lesson" : "Add Video Lesson")}
+                        {module.type === 'text' && (initialData?.id ? "Edit Text Lesson" : "Add Text Lesson")}
+                        {module.type === 'quiz' && (initialData?.id ? "Edit Quiz" : "Add Quiz")}
                     </h2>
                     <Button variant="ghost" size="sm" onClick={onClose}>
                         <X className="h-4 w-4" />
@@ -98,13 +182,13 @@ export default function ModuleEditor({ isOpen, onClose, onSave, initialData }) {
                         <div className="space-y-2">
                             <label className="text-sm font-medium">YouTube Video URL</label>
                             <Input
-                                value={videoUrl || module.content}
+                                value={videoUrl}
                                 onChange={(e) => setVideoUrl(e.target.value)}
                                 placeholder="https://www.youtube.com/watch?v=..."
                             />
-                            {(module.content || videoUrl) && (
-                                <p className="text-xs text-muted-foreground">
-                                    Current video: {videoUrl || module.content}
+                            {(videoUrl) && (
+                                <p className="text-xs text-muted-foreground break-all">
+                                    Video URL: {videoUrl}
                                 </p>
                             )}
                         </div>
@@ -133,7 +217,7 @@ export default function ModuleEditor({ isOpen, onClose, onSave, initialData }) {
                                 />
                                 <div className="grid grid-cols-2 gap-2">
                                     {currentQuestion.options.map((opt, idx) => (
-                                        <div key={idx} className="flex gap-2">
+                                        <div key={idx} className="flex gap-2 items-center">
                                             <input
                                                 type="radio"
                                                 name="correctOption"
@@ -159,8 +243,16 @@ export default function ModuleEditor({ isOpen, onClose, onSave, initialData }) {
                                 <h3 className="font-semibold">Questions ({quizQuestions.length})</h3>
                                 {quizQuestions.map((q, idx) => (
                                     <div key={idx} className="flex justify-between items-center bg-muted p-2 rounded">
-                                        <span className="truncate flex-1">{idx + 1}. {q.question}</span>
-                                        <Button type="button" variant="ghost" size="sm" onClick={() => handleRemoveQuestion(idx)}>
+                                        <div className="flex-1">
+                                            <span className="font-medium">{idx + 1}.</span>
+                                            <span className="ml-2">{q.question}</span>
+                                        </div>
+                                        <Button
+                                            type="button"
+                                            variant="ghost"
+                                            size="sm"
+                                            onClick={() => handleRemoveQuestion(idx)}
+                                        >
                                             <X className="h-4 w-4" />
                                         </Button>
                                     </div>
@@ -173,7 +265,7 @@ export default function ModuleEditor({ isOpen, onClose, onSave, initialData }) {
                         <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
                         <Button type="submit" disabled={loading}>
                             {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                            Save Module
+                            {initialData?.id ? "Update" : "Save"} Module
                         </Button>
                     </div>
                 </form>

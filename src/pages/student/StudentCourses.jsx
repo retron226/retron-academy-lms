@@ -141,9 +141,9 @@ export default function StudentCourses() {
     if (loading) return <div>Loading courses...</div>;
 
     return (
-        <div className="space-y-8">
+        <div className="space-y-8 w-full h-full flex flex-col">
             {/* Enrollment Section */}
-            <Card>
+            {/* <Card>
                 <CardHeader>
                     <CardTitle>Enroll in a New Course</CardTitle>
                 </CardHeader>
@@ -161,67 +161,72 @@ export default function StudentCourses() {
                         </Button>
                     </form>
                 </CardContent>
-            </Card>
+            </Card> */}
 
             {/* My Courses List */}
-            <div className="space-y-4">
+            <div className="space-y-4 w-full h-full">
                 <h2 className="text-2xl font-bold tracking-tight">My Learning</h2>
-                <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-                    {enrolledCourses.map((course) => {
-                        const completedCount = course.progress?.completedModules?.length || 0;
-                        const totalCount = course.totalModules || 0;
-                        const progressPercent = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
+                {enrolledCourses.length === 0 ? (
+                    <div className=" py-12 text-muted-foreground flex w-full h-full items-center justify-center">
+                        You are not enrolled in any courses yet.
+                    </div>
+                ) :
 
-                        return (
-                            <Link key={course.id} to={`/student/course/${course.id}`}>
-                                <Card className="h-full hover:shadow-md transition-shadow cursor-pointer group flex flex-col">
-                                    <CardHeader className="p-0">
-                                        <div className="aspect-video w-full overflow-hidden rounded-t-lg bg-muted relative">
-                                            {course.thumbnailUrl ? (
-                                                <img
-                                                    src={course.thumbnailUrl}
-                                                    alt={course.title}
-                                                    className="h-full w-full object-cover"
-                                                />
-                                            ) : (
-                                                <div className="flex h-full items-center justify-center text-muted-foreground">
-                                                    No Thumbnail
+                    <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+                        {enrolledCourses.map((course) => {
+                            const completedCount = course.progress?.completedModules?.length || 0;
+                            const totalCount = course.totalModules || 0;
+                            const progressPercent = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
+
+                            return (
+                                <Link key={course.id} to={`/student/course/${course.id}`}>
+                                    <Card className="h-full hover:shadow-md transition-shadow cursor-pointer group flex flex-col">
+                                        <CardHeader className="p-0">
+                                            <div className="aspect-video w-full overflow-hidden rounded-t-lg bg-muted relative">
+                                                {course.thumbnailUrl ? (
+                                                    <img
+                                                        src={course.thumbnailUrl}
+                                                        alt={course.title}
+                                                        className="h-full w-full object-cover"
+                                                    />
+                                                ) : (
+                                                    <div className="flex h-full items-center justify-center text-muted-foreground">
+                                                        No Thumbnail
+                                                    </div>
+                                                )}
+                                                <div className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                                                    <PlayCircle className="h-12 w-12 text-white" />
                                                 </div>
-                                            )}
-                                            <div className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                                                <PlayCircle className="h-12 w-12 text-white" />
                                             </div>
-                                        </div>
-                                    </CardHeader>
-                                    <CardContent className="p-6 flex-1 flex flex-col">
-                                        <CardTitle className="mb-2 line-clamp-1">{course.title}</CardTitle>
-                                        <p className="text-sm text-muted-foreground line-clamp-2 mb-4 flex-1">
-                                            {course.description}
-                                        </p>
+                                        </CardHeader>
+                                        <CardContent className="p-6 flex-1 flex flex-col">
+                                            <CardTitle className="mb-2 line-clamp-1">{course.title}</CardTitle>
+                                            <p className="text-sm text-muted-foreground line-clamp-2 mb-4 flex-1">
+                                                {course.description}
+                                            </p>
 
-                                        <div className="space-y-2">
-                                            <div className="flex justify-between text-xs text-muted-foreground">
-                                                <span>{progressPercent}% Complete</span>
-                                                <span>{completedCount}/{totalCount} Modules</span>
+                                            <div className="space-y-2">
+                                                <div className="flex justify-between text-xs text-muted-foreground">
+                                                    <span>{progressPercent}% Complete</span>
+                                                    <span>{completedCount}/{totalCount} Modules</span>
+                                                </div>
+                                                <div className="h-2 w-full bg-secondary rounded-full overflow-hidden">
+                                                    <div
+                                                        className="h-full bg-primary transition-all duration-500"
+                                                        style={{ width: `${progressPercent}%` }}
+                                                    />
+                                                </div>
                                             </div>
-                                            <div className="h-2 w-full bg-secondary rounded-full overflow-hidden">
-                                                <div
-                                                    className="h-full bg-primary transition-all duration-500"
-                                                    style={{ width: `${progressPercent}%` }}
-                                                />
-                                            </div>
-                                        </div>
-                                    </CardContent>
-                                </Card>
-                            </Link>
-                        )
-                    })}
-                    {enrolledCourses.length === 0 && (
-                        <div className="col-span-full text-center py-12 text-muted-foreground">
-                            You are not enrolled in any courses yet.
-                        </div>
-                    )}
-                </div>
+                                        </CardContent>
+                                    </Card>
+                                </Link>
+                            )
+                        })}
+
+                    </div>
+                }
+
+
             </div>
         </div>
     );

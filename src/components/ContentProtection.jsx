@@ -62,7 +62,7 @@ export default function ContentProtection({ children }) {
             {/* Watermark Overlay Removed */}
 
             {/* Content */}
-            <div className="select-none relative z-0">
+            <div className="select-none relative">
                 {children}
             </div>
 
