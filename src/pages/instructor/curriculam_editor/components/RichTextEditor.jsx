@@ -567,7 +567,11 @@ export default function RichTextEditor({
         ],
         content: content || '<p>Start typing here...</p>',
         onUpdate: ({ editor }) => {
-            onChange(editor.getHTML());
+            // FIXED: Only update parent if content actually changed
+            const newContent = editor.getHTML();
+            if (newContent !== content) {
+                onChange(newContent);
+            }
         },
         onSelectionUpdate: ({ editor }) => {
             // Check if an image is selected
@@ -595,6 +599,13 @@ export default function RichTextEditor({
             },
         },
     });
+
+    // FIXED: Update editor content when prop changes
+    useEffect(() => {
+        if (editor && content !== editor.getHTML()) {
+            editor.commands.setContent(content || '<p>Start typing here...</p>');
+        }
+    }, [editor, content]);
 
     // Apply font size to selected text or set default for new text
     const applyFontSize = (size) => {
@@ -878,10 +889,12 @@ export default function RichTextEditor({
         }
     };
 
-    // Save and close
+    // Save and close - FIXED: Ensure content is saved properly
     const handleSave = () => {
         if (editor) {
-            onChange(editor.getHTML());
+            const finalContent = editor.getHTML();
+            console.log("💾 Saving content from RTE:", finalContent);
+            onChange(finalContent);
             toast({
                 title: "Saved",
                 description: "Content saved successfully",
@@ -2002,36 +2015,6 @@ function ImageSettingsModal({
                             </div>
                         </div>
                     </div>
-
-                    {/* Max Height Controls */}
-                    {/* <div className="space-y-2">
-                        <Label htmlFor="max-height">Max Height</Label>
-                        <div className="flex gap-2">
-                            <Input
-                                id="max-height"
-                                placeholder="e.g., 500px or none"
-                                value={imageData.maxHeight || 'none'}
-                                onChange={(e) => onImageDataChange({ maxHeight: e.target.value })}
-                            />
-                        </div>
-                        <div className="flex gap-2 mt-2">
-                            {['200px', '300px', '400px', '500px', 'none'].map((height) => (
-                                <Button
-                                    key={height}
-                                    type="button"
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={() => onImageDataChange({ maxHeight: height })}
-                                    className={`flex-1 ${(imageData.maxHeight || 'none') === height ? 'bg-primary/20 border-primary' : ''}`}
-                                >
-                                    {height === 'none' ? 'None' : height}
-                                </Button>
-                            ))}
-                        </div>
-                        <p className="text-xs text-muted-foreground">
-                            Maximum height the image can have. Images will scale proportionally.
-                        </p>
-                    </div> */}
 
                     {/* Quick Actions */}
                     <div>

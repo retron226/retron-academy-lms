@@ -75,6 +75,14 @@ export const DEFAULT_ROLE_PERMISSIONS = {
         PERMISSIONS.GRADE_ASSIGNED_ASSESSMENTS,
         PERMISSIONS.PROVIDE_FEEDBACK,
         PERMISSIONS.SEND_MESSAGES,
+        PERMISSIONS.CREATE_ANNOUNCEMENTS,
+        
+        // All partner instructor permissions
+        PERMISSIONS.VIEW_COURSE_CONTENT,
+        PERMISSIONS.VIEW_ASSIGNED_STUDENTS,
+        PERMISSIONS.GRADE_ASSIGNED_ASSESSMENTS,
+        PERMISSIONS.PROVIDE_FEEDBACK,
+        PERMISSIONS.SEND_MESSAGES,
         PERMISSIONS.CREATE_ANNOUNCEMENTS
     ],
 
@@ -214,10 +222,10 @@ export const getUserHomeRoute = (userData) => {
     if (!userData || !userData.role) return '/login';
 
     const homeRoutes = {
-        [ROLES.ADMIN]: '/admin/dashboard',
-        [ROLES.INSTRUCTOR]: '/instructor/dashboard',
-        [ROLES.PARTNER_INSTRUCTOR]: '/partner-instructor/dashboard',
-        [ROLES.STUDENT]: '/student/dashboard'
+        [ROLES.ADMIN]: '/admin/analytics',
+        [ROLES.INSTRUCTOR]: '/instructor/analytics',
+        [ROLES.PARTNER_INSTRUCTOR]: '/partner-instructor',
+        [ROLES.STUDENT]: '/student/analytics'
     };
 
     return homeRoutes[userData.role] || '/student/dashboard';

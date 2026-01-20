@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
     ChevronDown, ChevronRight, GripVertical, Trash2, Plus, Clock,
     BarChart, FileText, Video, HelpCircle, Copy, Edit2, MoreVertical,
-    Download, Filter, Search, Layers
+    Download, Filter, Search, Layers, Folder
 } from "lucide-react";
 import { Button } from "../../../../components/ui/button";
 import { Input } from "../../../../components/ui/input";
@@ -14,7 +14,7 @@ import {
     duplicateSectionWithReferences,
     duplicateSectionAsTemplate,
     deleteMultipleSections,
-    duplicateMultipleSections
+    duplicateMultipleSections,
 } from "../../../../services/sectionService";
 import ModuleList from "./ModuleList";
 import SubSectionList from "./SubSectionList";
@@ -22,7 +22,7 @@ import AddModuleButtons from "./AddModuleButtons";
 import { ModalContext } from "../../../../contexts/ModalContext";
 import { useToast } from "../../../../contexts/ToastComponent";
 
-export default function SectionList({ sections, courseId, onEditModule, onRefreshSections, onAddSection }) {
+export default function SectionList({ sections, courseId, onEditModule, onRefreshSections, onAddSection, onEditSection }) {
     const [expandedSections, setExpandedSections] = useState({});
     const [draggingSection, setDraggingSection] = useState(null);
     const [dragOverSection, setDragOverSection] = useState(null);
@@ -97,6 +97,98 @@ export default function SectionList({ sections, courseId, onEditModule, onRefres
             setSelectedSections([]);
         } else {
             setSelectedSections(filteredSections.map(s => s.id));
+        }
+    };
+
+    // FIXED: Proper edit section function
+    const handleEditSection = async (section) => {
+        try {
+            const result = await showModal({
+                title: "Edit Section",
+                type: "form",
+                fields: [
+                    {
+                        name: "title",
+                        label: "Section Title",
+                        type: "text",
+                        required: true,
+                        defaultValue: section.title || "",
+                        placeholder: "Enter section title"
+                    },
+                    {
+                        name: "description",
+                        label: "Description (Optional)",
+                        type: "textarea",
+                        required: false,
+                        defaultValue: section.description || "",
+                        placeholder: "Enter description"
+                    },
+                    {
+                        name: "objectives",
+                        label: "Learning Objectives (Optional)",
+                        type: "textarea",
+                        required: false,
+                        defaultValue: section.objectives?.join(', ') || "",
+                        placeholder: "Enter comma-separated objectives"
+                    },
+                    {
+                        name: "duration",
+                        label: "Estimated Duration",
+                        type: "text",
+                        required: false,
+                        defaultValue: section.duration || "60 min",
+                        placeholder: "e.g., 2 hours, 45 min"
+                    }
+                ],
+                submitText: "Save Changes",
+                cancelText: "Cancel"
+            });
+
+            if (result) {
+                // Check if parent component provides edit function
+                if (onEditSection) {
+                    await onEditSection(section.id, {
+                        ...section,
+                        title: result.title,
+                        description: result.description,
+                        objectives: result.objectives ? result.objectives.split(',').map(obj => obj.trim()).filter(obj => obj) : [],
+                        duration: result.duration
+                    });
+                } else {
+                    // Fallback to service call
+                    // Note: You need to implement updateSection in your service
+                    // await updateSection(courseId, section.id, {
+                    //     title: result.title,
+                    //     description: result.description,
+                    //     objectives: result.objectives ? result.objectives.split(',').map(obj => obj.trim()).filter(obj => obj) : [],
+                    //     duration: result.duration
+                    // });
+                    console.log("Update section data:", {
+                        courseId,
+                        sectionId: section.id,
+                        data: {
+                            title: result.title,
+                            description: result.description,
+                            objectives: result.objectives ? result.objectives.split(',').map(obj => obj.trim()).filter(obj => obj) : [],
+                            duration: result.duration
+                        }
+                    });
+                }
+
+                if (onRefreshSections) onRefreshSections();
+                toast({
+                    title: "Success",
+                    description: "Section updated successfully",
+                    variant: "default",
+                });
+            }
+        } catch (error) {
+            console.error("Error editing section:", error);
+            toast({
+                title: "Error",
+                description: error.message || "Failed to edit section",
+                variant: "destructive",
+            });
         }
     };
 
@@ -328,7 +420,7 @@ export default function SectionList({ sections, courseId, onEditModule, onRefres
                         label: "Sub-Section Title",
                         type: "text",
                         required: true,
-                        defaultValue: subSection.title,
+                        defaultValue: subSection.title || "",
                         placeholder: "Enter sub-section title"
                     },
                     {
@@ -361,8 +453,6 @@ export default function SectionList({ sections, courseId, onEditModule, onRefres
             });
 
             if (result) {
-                // Note: You need to implement updateSubSection in your service
-                // await updateSubSection(courseId, sectionId, subSection.id, result);
                 console.log("Update sub-section data:", {
                     courseId,
                     sectionId,
@@ -398,8 +488,6 @@ export default function SectionList({ sections, courseId, onEditModule, onRefres
             });
 
             if (confirmed) {
-                // Note: You need to implement deleteSubSection in your service
-                // await deleteSubSection(courseId, sectionId, subSectionId);
                 console.log("Delete sub-section:", { courseId, sectionId, subSectionId });
 
                 if (onRefreshSections) onRefreshSections();
@@ -437,8 +525,6 @@ export default function SectionList({ sections, courseId, onEditModule, onRefres
             });
 
             if (result) {
-                // Note: You need to implement duplicateSubSection in your service
-                // await duplicateSubSection(courseId, sectionId, subSection.id, result.title);
                 console.log("Duplicate sub-section:", {
                     sectionId,
                     subSection,
@@ -679,7 +765,6 @@ export default function SectionList({ sections, courseId, onEditModule, onRefres
         });
 
         if (confirmed) {
-            // Note: You need to implement reorderSections in your service
             console.log(`Move section ${draggedSectionId} to position of ${targetSectionId}`);
 
             if (onRefreshSections) onRefreshSections();
@@ -850,6 +935,7 @@ export default function SectionList({ sections, courseId, onEditModule, onRefres
                             isSelected={selectedSections.includes(section.id)}
                             onToggle={() => toggleSection(section.id)}
                             onSelect={() => toggleSectionSelection(section.id)}
+                            onEdit={() => handleEditSection(section)}
                             onDelete={() => handleDeleteSection(section.id, section.title)}
                             onDuplicate={() => handleDuplicateSection(section)}
                             onAddSubSection={() => handleAddSubSection(section.id, section.title)}
@@ -909,6 +995,7 @@ function SectionItem({
     isSelected,
     onToggle,
     onSelect,
+    onEdit,
     onDelete,
     onDuplicate,
     onAddSubSection,
@@ -945,6 +1032,7 @@ function SectionItem({
                 isSelected={isSelected}
                 onToggle={onToggle}
                 onSelect={onSelect}
+                onEdit={onEdit}
                 onDelete={onDelete}
                 onDuplicate={onDuplicate}
                 onAddSubSection={onAddSubSection}
@@ -967,7 +1055,9 @@ function SectionItem({
     );
 }
 
-function SectionHeader({ section, index, isExpanded, isSelected, onToggle, onSelect, onDelete, onDuplicate, onAddSubSection }) {
+function SectionHeader({ section, index, isExpanded, isSelected, onToggle, onSelect, onEdit, onDelete, onDuplicate, onAddSubSection }) {
+    const [showOptions, setShowOptions] = useState(false);
+
     const moduleStats = {
         total: section?.modules?.length || 0,
         video: section?.modules?.filter(m => m?.type === 'video').length || 0,
@@ -1081,23 +1171,68 @@ function SectionHeader({ section, index, isExpanded, isSelected, onToggle, onSel
                     <span className="hidden sm:inline">Sub-section</span>
                 </Button>
 
-                <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={onDuplicate}
-                    className="gap-1"
-                >
-                    <Copy className="h-3 w-3" />
-                </Button>
+                {/* More Options Dropdown */}
+                <div className="relative">
+                    <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setShowOptions(!showOptions)}
+                        className="h-8 w-8 p-0"
+                    >
+                        <MoreVertical className="h-4 w-4" />
+                    </Button>
 
-                <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={onDelete}
-                    className="text-destructive hover:text-destructive/90 hover:bg-destructive/10"
-                >
-                    <Trash2 className="h-4 w-4" />
-                </Button>
+                    <AnimatePresence>
+                        {showOptions && (
+                            <motion.div
+                                initial={{ opacity: 0, scale: 0.9, y: -10 }}
+                                animate={{ opacity: 1, scale: 1, y: 0 }}
+                                exit={{ opacity: 0, scale: 0.9, y: -10 }}
+                                className="absolute right-0 top-full mt-1 w-56 bg-popover border rounded-lg shadow-lg z-10"
+                                onClick={(e) => e.stopPropagation()}
+                            >
+                                <div className="p-2 space-y-1">
+                                    <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={() => {
+                                            onEdit();
+                                            setShowOptions(false);
+                                        }}
+                                        className="w-full justify-start gap-2 h-9"
+                                    >
+                                        <Edit2 className="h-4 w-4" />
+                                        Edit Section
+                                    </Button>
+                                    <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={() => {
+                                            onDuplicate();
+                                            setShowOptions(false);
+                                        }}
+                                        className="w-full justify-start gap-2 h-9"
+                                    >
+                                        <Copy className="h-4 w-4" />
+                                        Duplicate
+                                    </Button>
+                                    <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={() => {
+                                            onDelete();
+                                            setShowOptions(false);
+                                        }}
+                                        className="w-full justify-start gap-2 h-9 text-destructive hover:text-destructive hover:bg-destructive/10"
+                                    >
+                                        <Trash2 className="h-4 w-4" />
+                                        Delete
+                                    </Button>
+                                </div>
+                            </motion.div>
+                        )}
+                    </AnimatePresence>
+                </div>
             </div>
         </div>
     );

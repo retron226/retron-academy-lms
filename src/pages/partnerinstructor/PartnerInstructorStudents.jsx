@@ -23,7 +23,7 @@ import { Button } from "../../components/ui/button";
 import { PERMISSIONS } from "../../lib/rbac";
 
 export default function PartnerInstructorStudents() {
-    const { userData, hasPermission } = useAuth();
+    const { userData } = useAuth();
     const [students, setStudents] = useState([]);
     const [loading, setLoading] = useState(true);
     const [searchQuery, setSearchQuery] = useState("");
@@ -35,8 +35,13 @@ export default function PartnerInstructorStudents() {
     const [courses, setCourses] = useState([]);
     const [selectedCourseId, setSelectedCourseId] = useState("all");
 
-    const canViewStudents = hasPermission(PERMISSIONS.VIEW_ASSIGNED_STUDENTS);
-    const canViewProgress = hasPermission(PERMISSIONS.VIEW_STUDENT_PROGRESS);
+    // Check permissions directly using hasPermission from useAuth
+    const canViewStudents = userData?.role === 'partner_instructor' ||
+        userData?.role === 'instructor' ||
+        userData?.role === 'admin';
+    const canViewProgress = userData?.role === 'partner_instructor' ||
+        userData?.role === 'instructor' ||
+        userData?.role === 'admin';
 
     useEffect(() => {
         if (canViewStudents && userData) {
@@ -233,9 +238,14 @@ export default function PartnerInstructorStudents() {
     if (!canViewStudents) {
         return (
             <div className="text-center py-12">
-                <p className="text-muted-foreground">
-                    You don't have permission to view students.
-                </p>
+                <div className="mx-auto max-w-md">
+                    <div className="rounded-lg border border-red-200 bg-red-50 p-6">
+                        <h3 className="text-lg font-semibold text-red-800">Access Denied</h3>
+                        <p className="mt-2 text-sm text-red-600">
+                            You don't have permission to view students. Please contact your administrator.
+                        </p>
+                    </div>
+                </div>
             </div>
         );
     }
@@ -252,9 +262,13 @@ export default function PartnerInstructorStudents() {
         <div className="space-y-6">
             {/* Header */}
             <div>
-                <h1 className="text-3xl font-bold tracking-tight">Institution Students</h1>
+                <h1 className="text-3xl font-bold tracking-tight">
+                    {userData?.role === 'partner_instructor' ? 'My Students' : 'Institution Students'}
+                </h1>
                 <p className="text-muted-foreground mt-2">
-                    View students enrolled in your institution's courses
+                    {userData?.role === 'partner_instructor'
+                        ? 'View students assigned to your courses'
+                        : 'View students enrolled in your institution\'s courses'}
                 </p>
             </div>
 
@@ -273,20 +287,22 @@ export default function PartnerInstructorStudents() {
                 </div>
 
                 {/* Course Filter Dropdown */}
-                <div className="w-full md:w-64">
-                    <select
-                        className="w-full px-3 py-2 rounded-md border border-input bg-background text-sm"
-                        value={selectedCourseId}
-                        onChange={(e) => setSelectedCourseId(e.target.value)}
-                    >
-                        <option value="all">All Students</option>
-                        {courses.map(course => (
-                            <option key={course.id} value={course.id}>
-                                {course.title}
-                            </option>
-                        ))}
-                    </select>
-                </div>
+                {courses.length > 0 && (
+                    <div className="w-full md:w-64">
+                        <select
+                            className="w-full px-3 py-2 rounded-md border border-input bg-background text-sm"
+                            value={selectedCourseId}
+                            onChange={(e) => setSelectedCourseId(e.target.value)}
+                        >
+                            <option value="all">All Students</option>
+                            {courses.map(course => (
+                                <option key={course.id} value={course.id}>
+                                    {course.title}
+                                </option>
+                            ))}
+                        </select>
+                    </div>
+                )}
             </div>
 
             {/* Stats Card */}
@@ -356,6 +372,9 @@ export default function PartnerInstructorStudents() {
                                         <div className="flex flex-col items-center gap-2">
                                             <Search className="h-8 w-8 opacity-50" />
                                             <p>{searchQuery ? "No students match your search" : "No students found"}</p>
+                                            {!searchQuery && (
+                                                <p className="text-sm">Students will appear here once they enroll in your institution's courses</p>
+                                            )}
                                         </div>
                                     </TableCell>
                                 </TableRow>

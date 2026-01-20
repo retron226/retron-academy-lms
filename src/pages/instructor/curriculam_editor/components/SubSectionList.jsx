@@ -1,4 +1,4 @@
-import { useState, useContext } from "react";
+import { useState, useContext, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "../../../../components/ui/button";
 import { Card, CardContent } from "../../../../components/ui/card";
@@ -49,42 +49,14 @@ export default function SubSectionList({
 
     const { toast } = useToast();
 
-    if (!subSections || subSections.length === 0) {
-        return (
-            <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                className={`text-center py-6 ${className}`}
-            >
-                <div className="inline-flex flex-col items-center p-6 border-2 border-dashed rounded-lg bg-muted/20">
-                    <div className="h-12 w-12 rounded-full bg-primary/10 flex items-center justify-center mb-3">
-                        <Plus className="h-6 w-6 text-primary" />
-                    </div>
-                    <h4 className="font-medium mb-1">No Sub-sections Yet</h4>
-                    <p className="text-sm text-muted-foreground mb-4 max-w-sm">
-                        Create sub-sections to organize content into smaller, manageable parts
-                    </p>
-                    <Button
-                        onClick={handleAddSubSection}
-                        variant="outline"
-                        className="gap-2"
-                    >
-                        <Plus className="h-4 w-4" />
-                        Add First Sub-section
-                    </Button>
-                </div>
-            </motion.div>
-        );
-    }
-
-    const toggleSubSection = (subSectionId) => {
+    const toggleSubSection = useCallback((subSectionId) => {
         setExpandedSubSections(prev => ({
             ...prev,
             [subSectionId]: !prev[subSectionId]
         }));
-    };
+    }, []);
 
-    const handleAddSubSection = async () => {
+    const handleAddSubSection = useCallback(async () => {
         try {
             // If parent provides onAddSubSection, use it
             if (onAddSubSection) {
@@ -155,9 +127,9 @@ export default function SubSectionList({
                 variant: "destructive",
             });
         }
-    };
+    }, [onAddSubSection, showFormModal, toast]);
 
-    const handleEditSubSection = async (subSection) => {
+    const handleEditSubSection = useCallback(async (subSection) => {
         try {
             if (typeof showFormModal !== 'function') {
                 toast({
@@ -230,9 +202,9 @@ export default function SubSectionList({
                 variant: "destructive",
             });
         }
-    };
+    }, [showFormModal, onEditSubSection, toast]);
 
-    const handleDeleteSubSection = async (subSectionId, subSectionTitle) => {
+    const handleDeleteSubSection = useCallback(async (subSectionId, subSectionTitle) => {
         try {
             if (typeof showConfirmModal !== 'function') {
                 toast({
@@ -262,9 +234,9 @@ export default function SubSectionList({
                 variant: "destructive",
             });
         }
-    };
+    }, [showConfirmModal, onDeleteSubSection, toast]);
 
-    const handleDuplicateSubSection = async (subSection) => {
+    const handleDuplicateSubSection = useCallback(async (subSection) => {
         try {
             if (typeof showFormModal !== 'function') {
                 toast({
@@ -305,24 +277,24 @@ export default function SubSectionList({
                 variant: "destructive",
             });
         }
-    };
+    }, [showFormModal, onDuplicateSubSection, toast]);
 
-    const handleDragStart = (e, subSectionId) => {
+    const handleDragStart = useCallback((e, subSectionId) => {
         setDraggingSubSection(subSectionId);
         e.dataTransfer.setData('text/plain', subSectionId);
         e.dataTransfer.effectAllowed = 'move';
-    };
+    }, []);
 
-    const handleDragOver = (e, subSectionId) => {
+    const handleDragOver = useCallback((e, subSectionId) => {
         e.preventDefault();
         setDragOverSubSection(subSectionId);
-    };
+    }, []);
 
-    const handleDragLeave = () => {
+    const handleDragLeave = useCallback(() => {
         setDragOverSubSection(null);
-    };
+    }, []);
 
-    const handleDrop = async (e, targetSubSectionId) => {
+    const handleDrop = useCallback(async (e, targetSubSectionId) => {
         e.preventDefault();
         const draggedSubSectionId = e.dataTransfer.getData('text/plain');
 
@@ -368,7 +340,35 @@ export default function SubSectionList({
 
         setDragOverSubSection(null);
         setDraggingSubSection(null);
-    };
+    }, [showConfirmModal, toast]);
+
+    if (!subSections || subSections.length === 0) {
+        return (
+            <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                className={`text-center py-6 ${className}`}
+            >
+                <div className="inline-flex flex-col items-center p-6 border-2 border-dashed rounded-lg bg-muted/20">
+                    <div className="h-12 w-12 rounded-full bg-primary/10 flex items-center justify-center mb-3">
+                        <Plus className="h-6 w-6 text-primary" />
+                    </div>
+                    <h4 className="font-medium mb-1">No Sub-sections Yet</h4>
+                    <p className="text-sm text-muted-foreground mb-4 max-w-sm">
+                        Create sub-sections to organize content into smaller, manageable parts
+                    </p>
+                    <Button
+                        onClick={handleAddSubSection}
+                        variant="outline"
+                        className="gap-2"
+                    >
+                        <Plus className="h-4 w-4" />
+                        Add First Sub-section
+                    </Button>
+                </div>
+            </motion.div>
+        );
+    }
 
     return (
         <div className={`space-y-3 ${className}`}>
@@ -482,59 +482,71 @@ function SubSectionItem({
         text: subSection.modules?.filter(m => m.type === 'text').length || 0,
         quiz: subSection.modules?.filter(m => m.type === 'quiz').length || 0
     };
+    const handleEditModule = useCallback((moduleOrWrapper) => {
+        console.log("🔍 handleEditModule called with:", moduleOrWrapper);
 
-    // Handle editing a module - this will prefill the content
-    const handleEditModule = (module) => {
+        // The actual module might be in moduleOrWrapper.module or might be moduleOrWrapper itself
+        const actualModule = moduleOrWrapper.module ? moduleOrWrapper.module : moduleOrWrapper;
+
+        console.log("📋 Actual module:", actualModule);
+        console.log("📋 Module content:", actualModule.content);
+
         if (onEditModule) {
             onEditModule({
                 sectionId,
                 subSectionId: subSection.id,
-                module: {
-                    id: module.id,
-                    title: module.title || "",
-                    type: module.type || "text",
-                    content: module.content || "",
-                    description: module.description || "",
-                    duration: module.duration || "10 min",
-                    isActive: module.isActive !== false,
-                    // Include additional module-specific data
-                    videoUrl: module.videoUrl || "",
-                    transcript: module.transcript || "",
-                    quizQuestions: module.quizQuestions || [],
-                    attachments: module.attachments || [],
-                    tags: module.tags || [],
-                    objectives: module.objectives || []
-                },
-                isNew: false // This is an edit, not a new module
+                module: actualModule,
+                isNew: false
             });
         }
-    };
+    }, [sectionId, subSection.id, onEditModule]);
 
     // Handle adding a new module
-    const handleAddModule = (type) => {
+    const handleAddModule = useCallback((type) => {
+        console.log(`Adding new module of type: ${type}`);
+
         if (onEditModule) {
+            // Create properly structured module data with all required fields
+            const moduleData = {
+                id: Date.now().toString(),
+                title: "",
+                type,
+                content: "",
+                description: "",
+                duration: type === 'video' ? "15 min" : type === 'quiz' ? "10 min" : "5 min",
+                isActive: true,
+                videoUrl: type === 'video' ? "" : undefined,
+                transcript: "",
+                attachments: [],
+                tags: [],
+                objectives: [],
+                order: 0,
+                createdAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString()
+            };
+
+            // Add quiz questions for quiz type
+            if (type === 'quiz') {
+                moduleData.quizQuestions = [];
+            }
+
+            console.log("New module data:", moduleData);
+
             onEditModule({
                 sectionId,
                 subSectionId: subSection.id,
-                module: {
-                    id: Date.now().toString(),
-                    title: "",
-                    type,
-                    content: "",
-                    description: "",
-                    duration: type === 'video' ? "15 min" : type === 'quiz' ? "10 min" : "5 min",
-                    isActive: true,
-                    // Initialize type-specific fields
-                    videoUrl: type === 'video' ? "" : undefined,
-                    quizQuestions: type === 'quiz' ? [] : undefined,
-                    attachments: [],
-                    tags: [],
-                    objectives: []
-                },
-                isNew: true // This is a new module
+                module: moduleData,
+                isNew: true,
+                _debug: {
+                    timestamp: new Date().toISOString(),
+                    isNew: true,
+                    path: `courses/${courseId}/sections/${sectionId}/subSections/${subSection.id}/modules/${moduleData.id}`
+                }
             });
+        } else {
+            console.error("onEditModule prop is not provided to SubSectionItem");
         }
-    };
+    }, [sectionId, subSection.id, courseId, onEditModule]);
 
     return (
         <motion.div
@@ -827,29 +839,39 @@ function parseDuration(durationString) {
 function formatRelativeDate(dateString) {
     if (!dateString) return '';
 
-    const date = new Date(dateString);
-    const now = new Date();
-    const diffMs = now - date;
-    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+    try {
+        const date = new Date(dateString);
+        const now = new Date();
+        const diffMs = now - date;
+        const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
 
-    if (diffDays === 0) return 'today';
-    if (diffDays === 1) return 'yesterday';
-    if (diffDays < 7) return `${diffDays} days ago`;
-    if (diffDays < 30) return `${Math.floor(diffDays / 7)} weeks ago`;
+        if (diffDays === 0) return 'today';
+        if (diffDays === 1) return 'yesterday';
+        if (diffDays < 7) return `${diffDays} days ago`;
+        if (diffDays < 30) return `${Math.floor(diffDays / 7)} weeks ago`;
 
-    return date.toLocaleDateString('en-US', {
-        month: 'short',
-        day: 'numeric'
-    });
+        return date.toLocaleDateString('en-US', {
+            month: 'short',
+            day: 'numeric'
+        });
+    } catch (error) {
+        console.error('Error formatting date:', error);
+        return '';
+    }
 }
 
 function formatDate(dateString) {
     if (!dateString) return '';
 
-    const date = new Date(dateString);
-    return date.toLocaleDateString('en-US', {
-        month: 'short',
-        day: 'numeric',
-        year: 'numeric'
-    });
+    try {
+        const date = new Date(dateString);
+        return date.toLocaleDateString('en-US', {
+            month: 'short',
+            day: 'numeric',
+            year: 'numeric'
+        });
+    } catch (error) {
+        console.error('Error formatting date:', error);
+        return '';
+    }
 }

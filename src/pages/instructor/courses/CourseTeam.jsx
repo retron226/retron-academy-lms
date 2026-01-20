@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { collection, query, where, getDocs, addDoc } from "firebase/firestore";
+import { collection, query, where, getDocs, addDoc, updateDoc, doc, arrayUnion } from "firebase/firestore";
 import { Card, CardContent, CardHeader, CardTitle } from "../../..//components/ui/card";
 import { Button } from "../../../components/ui/button";
 import { Search, X, Loader2 } from "lucide-react";
@@ -7,9 +7,12 @@ import { motion, AnimatePresence } from "framer-motion";
 import { db } from "../../../lib/firebase";
 import { Input } from "../../../components/ui/input";
 import { useAuth } from "../../../contexts/AuthContext";
+import { useToast } from "../../../contexts/ToastComponent";
+
 
 export default function CourseTeam({ courseId, course, setCourse }) {
     const { user } = useAuth();
+    const { toast } = useToast();
     const [teamMembers, setTeamMembers] = useState([]);
     const [invitations, setInvitations] = useState([]);
     const [searchEmail, setSearchEmail] = useState("");
@@ -56,12 +59,65 @@ export default function CourseTeam({ courseId, course, setCourse }) {
         setSearchLoading(true);
 
         try {
-            // ... invitation logic from original component
+            // Step 1: Find user by email
+            const usersRef = collection(db, "users");
+            const q = query(usersRef, where("email", "==", searchEmail));
+            const querySnapshot = await getDocs(q);
+
+            if (querySnapshot.empty) {
+                toast({
+                    title: "User not found",
+                    description: "No user found with this email address",
+                    variant: "destructive"
+                });
+                return;
+            }
+
+            const userDoc = querySnapshot.docs[0];
+            const userId = userDoc.id;
+            const userData = userDoc.data();
+
+            // Check if user has appropriate role (instructor or partner_instructor)
+            if (userData.role !== 'instructor' && userData.role !== 'partner_instructor') {
+                toast({
+                    title: "Invalid Role",
+                    description: "Only instructors or partner instructors can be added as co-instructors",
+                    variant: "destructive"
+                });
+                return;
+            }
+
+            // Step 2: Add user as co-instructor to the course
+            const courseRef = doc(db, "courses", courseId);
+            await updateDoc(courseRef, {
+                coInstructorIds: arrayUnion(userId)
+            });
+
+            // Step 3: (Optional) Also add course to user's assignedCourses if they're a partner instructor
+            if (userData.role === 'partner_instructor') {
+                const userRef = doc(db, "users", userId);
+                await updateDoc(userRef, {
+                    assignedCourses: arrayUnion(courseId)
+                });
+            }
+
+            toast({
+                title: "Success",
+                description: `${userData.fullName || searchEmail} added as co-instructor`,
+                variant: "default"
+            });
+
+            setSearchEmail("");
         } catch (error) {
             console.error("Error sending invitation:", error);
-            alert(`Failed to send invitation: ${error.message}`);
+            toast({
+                title: "Error",
+                description: `Failed to add co-instructor: ${error.message}`,
+                variant: "destructive"
+            });
         } finally {
             setSearchLoading(false);
+            window.location.reload();
         }
     };
 
