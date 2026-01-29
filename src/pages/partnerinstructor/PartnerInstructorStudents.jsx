@@ -90,6 +90,7 @@ export default function PartnerInstructorStudents() {
     // Main fetch function
     const fetchData = async () => {
         try {
+            console.log("fetch DATA colled");
             setLoading(true);
             const [assignedCourses, assignedStudents] = await Promise.all([
                 fetchAssignedCourses(),
