@@ -5,7 +5,7 @@ import { doc, getDoc, collection, getDocs, orderBy, query, setDoc, onSnapshot } 
 import { useAuth } from "../../contexts/AuthContext";
 import { Button } from "../../components/ui/button";
 import { Card, CardContent } from "../../components/ui/card";
-import { PlayCircle, FileText, HelpCircle, CheckCircle, Menu } from "lucide-react";
+import { PlayCircle, FileText, HelpCircle, CheckCircle, Menu, ChevronDown, ChevronRight } from "lucide-react";
 import { cn } from "../../lib/utils";
 
 export default function CoursePlayer() {
@@ -19,6 +19,42 @@ export default function CoursePlayer() {
     const [loading, setLoading] = useState(true);
     const [sidebarOpen, setSidebarOpen] = useState(true);
     const [completedModules, setCompletedModules] = useState([]);
+    const [expandedSections, setExpandedSections] = useState({});
+    const [expandedSubSections, setExpandedSubSections] = useState({});
+
+    // Add this useEffect to override the ContentProtection styles for sidebar
+    useEffect(() => {
+        const overrideStyles = `
+            .course-player-sidebar * {
+                user-select: auto !important;
+                -webkit-user-select: auto !important;
+                -moz-user-select: auto !important;
+                -ms-user-select: auto !important;
+                pointer-events: auto !important;
+                cursor: pointer !important;
+            }
+            
+            .course-player-sidebar button {
+                cursor: pointer !important;
+                pointer-events: auto !important;
+            }
+            
+            .course-player-sidebar a,
+            .course-player-sidebar button,
+            .course-player-sidebar [role="button"] {
+                pointer-events: auto !important;
+                cursor: pointer !important;
+            }
+        `;
+
+        const styleSheet = document.createElement("style");
+        styleSheet.textContent = overrideStyles;
+        document.head.appendChild(styleSheet);
+
+        return () => {
+            document.head.removeChild(styleSheet);
+        };
+    }, []);
 
     useEffect(() => {
         if (user) {
@@ -63,11 +99,27 @@ export default function CoursePlayer() {
             const q = query(collection(db, "courses", courseId, "sections"), orderBy("order", "asc"));
             const sectionsSnap = await getDocs(q);
             const sectionsData = sectionsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+            console.log(sectionsData);
             setSections(sectionsData);
 
-            // Set initial active module
-            if (sectionsData.length > 0 && sectionsData[0].modules?.length > 0) {
-                setActiveModule(sectionsData[0].modules[0]);
+            // Set initial active module from first section's first subSection's first module
+            if (sectionsData.length > 0) {
+                // Find first section that has subSections with modules
+                for (const section of sectionsData) {
+                    if (section.subSections?.length > 0) {
+                        for (const subSection of section.subSections) {
+                            if (subSection.modules?.length > 0) {
+                                setActiveModule(subSection.modules[0]);
+                                // Expand the parent section and subSection
+                                setExpandedSections(prev => ({ ...prev, [section.id]: true }));
+                                setExpandedSubSections(prev => ({ ...prev, [subSection.id]: true }));
+                                break;
+                            }
+                        }
+                        if (activeModule) break;
+                    }
+                }
             }
 
         } catch (error) {
@@ -100,58 +152,141 @@ export default function CoursePlayer() {
         }
     };
 
+    const toggleSection = (sectionId) => {
+        setExpandedSections(prev => ({
+            ...prev,
+            [sectionId]: !prev[sectionId]
+        }));
+    };
+
+    const toggleSubSection = (subSectionId) => {
+        setExpandedSubSections(prev => ({
+            ...prev,
+            [subSectionId]: !prev[subSectionId]
+        }));
+    };
+
+    // Helper function to get all modules from a section (including subSections)
+    const getAllModulesInSection = (section) => {
+        const modules = [];
+        if (section.modules?.length > 0) {
+            modules.push(...section.modules);
+        }
+        if (section.subSections?.length > 0) {
+            section.subSections.forEach(subSection => {
+                if (subSection.modules?.length > 0) {
+                    modules.push(...subSection.modules);
+                }
+            });
+        }
+        return modules;
+    };
+
     if (loading) return <div>Loading player...</div>;
 
     return (
         <div className="flex h-[calc(100vh-4rem)] -m-8">
             {/* Sidebar - Curriculum */}
             <div className={cn(
-                "w-80 border-r bg-card overflow-y-auto transition-all duration-300 absolute md:relative z-10 h-full",
+                "w-80 border-r bg-card overflow-y-auto transition-all duration-300 absolute md:relative z-10 h-full course-player-sidebar",
                 sidebarOpen ? "translate-x-0" : "-translate-x-full md:w-0 md:translate-x-0 md:overflow-hidden"
             )}>
                 <div className="p-4 border-b font-semibold text-lg truncate">
                     {course.title}
                 </div>
                 <div className="p-2">
-                    {sections.map((section) => (
-                        <div key={section.id} className="mb-4">
-                            <h3 className="px-2 py-1 text-sm font-semibold text-muted-foreground uppercase tracking-wider">
-                                {section.title}
-                            </h3>
-                            <div className="space-y-1 mt-1">
-                                {section.modules?.map((module) => (
-                                    <button
-                                        key={module.id}
-                                        onClick={() => {
-                                            setActiveModule(module);
-                                            if (window.innerWidth < 768) setSidebarOpen(false);
-                                        }}
-                                        className={cn(
-                                            "w-full flex items-center gap-3 px-3 py-2 text-sm rounded-md transition-colors text-left",
-                                            activeModule?.id === module.id
-                                                ? "bg-primary text-primary-foreground"
-                                                : "hover:bg-muted"
+                    {sections.map((section) => {
+                        const hasContent = section.modules?.length > 0 || section.subSections?.length > 0;
+                        const isExpanded = expandedSections[section.id] || false;
+
+                        return (
+                            <div key={section.id} className="mb-2">
+                                {/* Section Header */}
+                                <div
+                                    onClick={() => hasContent && toggleSection(section.id)}
+                                    className={cn(
+                                        "flex items-center justify-between px-2 py-2 text-sm font-semibold text-muted-foreground uppercase tracking-wider rounded-md cursor-pointer",
+                                        hasContent ? "hover:bg-muted/50" : "opacity-50"
+                                    )}
+                                >
+                                    <span className="truncate">{section.title}</span>
+                                    {hasContent && (
+                                        isExpanded ?
+                                            <ChevronDown className="h-4 w-4 shrink-0" /> :
+                                            <ChevronRight className="h-4 w-4 shrink-0" />
+                                    )}
+                                </div>
+
+                                {/* Section Content */}
+                                {isExpanded && hasContent && (
+                                    <div className="ml-2 mt-1 border-l pl-2 space-y-2">
+                                        {/* Direct modules in section (if any) */}
+                                        {section.modules?.length > 0 && (
+                                            <div className="space-y-1">
+                                                {section.modules.map((module) => (
+                                                    <ModuleButton
+                                                        key={module.id}
+                                                        module={module}
+                                                        activeModule={activeModule}
+                                                        completedModules={completedModules}
+                                                        onClick={() => {
+                                                            setActiveModule(module);
+                                                            if (window.innerWidth < 768) setSidebarOpen(false);
+                                                        }}
+                                                    />
+                                                ))}
+                                            </div>
                                         )}
-                                    >
-                                        <div className="relative">
-                                            {completedModules.includes(module.id) ? (
-                                                <CheckCircle className="h-4 w-4 shrink-0 text-green-500" />
-                                            ) : (
-                                                <>
-                                                    {module.type === 'video' && <PlayCircle className="h-4 w-4 shrink-0" />}
-                                                    {module.type === 'text' && <FileText className="h-4 w-4 shrink-0" />}
-                                                    {module.type === 'quiz' && <HelpCircle className="h-4 w-4 shrink-0" />}
-                                                </>
-                                            )}
-                                        </div>
-                                        <span className={cn("line-clamp-1", completedModules.includes(module.id) && "line-through text-muted-foreground")}>
-                                            {module.title}
-                                        </span>
-                                    </button>
-                                ))}
+
+                                        {/* SubSections */}
+                                        {section.subSections?.map((subSection) => {
+                                            const subHasContent = subSection.modules?.length > 0;
+                                            const isSubExpanded = expandedSubSections[subSection.id] || false;
+
+                                            return (
+                                                <div key={subSection.id} className="space-y-1">
+                                                    {/* SubSection Header */}
+                                                    <div
+                                                        onClick={() => subHasContent && toggleSubSection(subSection.id)}
+                                                        className={cn(
+                                                            "flex items-center justify-between px-2 py-1 text-xs font-medium text-foreground rounded-md cursor-pointer",
+                                                            subHasContent ? "hover:bg-muted/50" : "opacity-50"
+                                                        )}
+                                                    >
+                                                        <span className="truncate text-xs">{subSection.title}</span>
+                                                        {subHasContent && (
+                                                            isSubExpanded ?
+                                                                <ChevronDown className="h-3 w-3 shrink-0" /> :
+                                                                <ChevronRight className="h-3 w-3 shrink-0" />
+                                                        )}
+                                                    </div>
+
+                                                    {/* SubSection Modules */}
+                                                    {isSubExpanded && subSection.modules?.length > 0 && (
+                                                        <div className="ml-2 space-y-1">
+                                                            {subSection.modules.map((module) => (
+                                                                <ModuleButton
+                                                                    key={module.id}
+                                                                    module={module}
+                                                                    activeModule={activeModule}
+                                                                    completedModules={completedModules}
+                                                                    onClick={() => {
+                                                                        setActiveModule(module);
+                                                                        if (window.innerWidth < 768) setSidebarOpen(false);
+                                                                    }}
+                                                                    indentLevel={2}
+                                                                />
+                                                            ))}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                )}
                             </div>
-                        </div>
-                    ))}
+                        );
+                    })}
                 </div>
             </div>
 
@@ -200,10 +335,11 @@ export default function CoursePlayer() {
                                     )}
 
                                     {activeModule.type === 'text' && (
-                                        <div className="prose dark:prose-invert max-w-none select-none">
-                                            <div className="whitespace-pre-wrap font-sans">
-                                                {renderContentWithLinks(activeModule.content)}
-                                            </div>
+                                        <div className="prose dark:prose-invert max-w-none">
+                                            <div
+                                                className="whitespace-pre-wrap font-sans select-text"
+                                                dangerouslySetInnerHTML={{ __html: activeModule.content }}
+                                            />
                                         </div>
                                     )}
 
@@ -224,51 +360,89 @@ export default function CoursePlayer() {
     );
 }
 
+// Helper Component for Module Buttons
+function ModuleButton({ module, activeModule, completedModules, onClick, indentLevel = 1 }) {
+    return (
+        <button
+            onClick={onClick}
+            className={cn(
+                "w-full flex items-center gap-3 px-3 py-2 text-sm rounded-md transition-colors text-left",
+                activeModule?.id === module.id
+                    ? "bg-primary text-primary-foreground"
+                    : "hover:bg-muted",
+                indentLevel === 2 && "ml-4"
+            )}
+        >
+            <div className="relative">
+                {completedModules.includes(module.id) ? (
+                    <CheckCircle className="h-4 w-4 shrink-0 text-green-500" />
+                ) : (
+                    <>
+                        {module.type === 'video' && <PlayCircle className="h-4 w-4 shrink-0" />}
+                        {module.type === 'text' && <FileText className="h-4 w-4 shrink-0" />}
+                        {module.type === 'quiz' && <HelpCircle className="h-4 w-4 shrink-0" />}
+                    </>
+                )}
+            </div>
+            <span className={cn("line-clamp-1 flex-1", completedModules.includes(module.id) && "line-through text-muted-foreground")}>
+                {module.title}
+            </span>
+        </button>
+    );
+}
+
 function getYouTubeEmbedUrl(url) {
     if (!url) return "";
-    let videoId = "";
 
+    // If it's already a full YouTube URL
     if (url.includes("youtube.com/watch?v=")) {
-        videoId = url.split("v=")[1];
+        let videoId = url.split("v=")[1];
         const ampersandPosition = videoId.indexOf("&");
         if (ampersandPosition !== -1) {
             videoId = videoId.substring(0, ampersandPosition);
         }
-    } else if (url.includes("youtu.be/")) {
-        videoId = url.split("youtu.be/")[1];
-    } else if (url.includes("youtube.com/embed/")) {
+        return `https://www.youtube.com/embed/${videoId}`;
+    }
+    // If it's a youtu.be short URL
+    else if (url.includes("youtu.be/")) {
+        const videoId = url.split("youtu.be/")[1];
+        return `https://www.youtube.com/embed/${videoId}`;
+    }
+    // If it's already an embed URL
+    else if (url.includes("youtube.com/embed/")) {
         return url;
     }
+    // If it's just a video ID (like in your data)
+    else if (url.match(/^[a-zA-Z0-9_-]{11}$/)) {
+        return `https://www.youtube.com/embed/${url}`;
+    }
 
-    return `https://www.youtube.com/embed/${videoId}`;
+    return "";
 }
 
-function renderContentWithLinks(text) {
-    if (!text) return null;
-
-    // Regex to find URLs
-    const urlRegex = /(https?:\/\/[^\s]+)/g;
-
-    const parts = text.split(urlRegex);
-
-    return parts.map((part, index) => {
-        if (part.match(urlRegex)) {
-            return (
-                <a
-                    key={index}
-                    href={part}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-primary underline hover:text-primary/80 cursor-pointer pointer-events-auto"
-                    onClick={(e) => e.stopPropagation()}
-                >
-                    {part}
-                </a>
-            );
-        }
-        return part;
-    });
-}
+// Remove or update renderContentWithLinks since we're using dangerouslySetInnerHTML
+// function renderContentWithLinks(text) {
+//     if (!text) return null;
+//     const urlRegex = /(https?:\/\/[^\s]+)/g;
+//     const parts = text.split(urlRegex);
+//     return parts.map((part, index) => {
+//         if (part.match(urlRegex)) {
+//             return (
+//                 <a
+//                     key={index}
+//                     href={part}
+//                     target="_blank"
+//                     rel="noopener noreferrer"
+//                     className="text-primary underline hover:text-primary/80 cursor-pointer pointer-events-auto"
+//                     onClick={(e) => e.stopPropagation()}
+//                 >
+//                     {part}
+//                 </a>
+//             );
+//         }
+//         return part;
+//     });
+// }
 
 function QuizPlayer({ module }) {
     const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
