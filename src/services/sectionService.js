@@ -1,6 +1,8 @@
 import { db } from "../lib/firebase";
 import { addDoc, updateDoc, deleteDoc, doc, collection, getDoc, writeBatch, getDocs, orderBy, query, where } from "firebase/firestore";
 
+
+
 // Helper function to parse duration string to minutes
 const parseDuration = (durationString) => {
     if (!durationString) return 60;

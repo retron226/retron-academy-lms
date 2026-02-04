@@ -31,7 +31,7 @@ import {
     SelectValue
 } from "../../../components/ui/select";
 import { useToast } from "../../../contexts/ToastComponent";
-import { db } from "../../../lib/firebase";
+import { auth, db } from "../../../lib/firebase";
 import { useAuth } from "../../../contexts/AuthContext";
 import { Input } from "../../../components/ui/input";
 import { Label } from "../../../components/ui/label";
@@ -48,11 +48,13 @@ import {
     Trash2,
     MoreVertical,
     Loader2,
-    UserPlus,
+    FileText,
     CheckSquare,
     Square,
     Phone,
-    RefreshCw
+    RefreshCw,
+    BarChart,
+    CheckCircle
 } from "lucide-react";
 import {
     DropdownMenu,
@@ -75,15 +77,16 @@ export default function PartnerInstructorManagement() {
     const [loading, setLoading] = useState(true);
     const [searchQuery, setSearchQuery] = useState("");
     const [assigningCourse, setAssigningCourse] = useState(false);
-    const [assigningStudents, setAssigningStudents] = useState(false);
+    const [assigningAssessment, setAssigningAssessment] = useState(false);
 
     // Dialog states
     const [assignCourseDialogOpen, setAssignCourseDialogOpen] = useState(false);
-    const [assignStudentsDialogOpen, setAssignStudentsDialogOpen] = useState(false);
+    const [assignAssessmentDialogOpen, setAssignAssessmentDialogOpen] = useState(false);
     const [selectedInstructor, setSelectedInstructor] = useState(null);
     const [selectedCourseId, setSelectedCourseId] = useState("");
-    const [availableStudents, setAvailableStudents] = useState([]);
-    const [selectedStudents, setSelectedStudents] = useState([]);
+    const [availableAssessments, setAvailableAssessments] = useState([]);
+    const [selectedAssessments, setSelectedAssessments] = useState([]);
+    const [alreadyAssignedAssessments, setAlreadyAssignedAssessments] = useState([]);
 
     useEffect(() => {
         fetchData();
@@ -128,15 +131,19 @@ export default function PartnerInstructorManagement() {
                 // Get assigned courses for this instructor
                 const assignedCourses = await fetchAssignedCourses(docSnap.id);
 
-                // Get assigned students count and list
-                const assignedStudents = await fetchAssignedStudents(docSnap.id);
+                // Get assigned assessments count and list
+                const assignedAssessments = await fetchAssignedAssessments(docSnap.id);
+
+                // Get already assigned assessments for students
+                const alreadyAssigned = await fetchAlreadyAssignedAssessments(docSnap.id);
 
                 instructorsData.push({
                     id: docSnap.id,
                     ...instructorData,
                     assignedCourses,
-                    assignedStudentsCount: assignedStudents.length,
-                    assignedStudentsList: assignedStudents,
+                    assignedAssessmentsCount: assignedAssessments.length,
+                    assignedAssessmentsList: assignedAssessments,
+                    alreadyAssignedAssessmentsList: alreadyAssigned,
                     courseCount: assignedCourses.length
                 });
             }
@@ -202,86 +209,131 @@ export default function PartnerInstructorManagement() {
         }
     };
 
-    const fetchAssignedStudents = async (instructorId) => {
+    const fetchAssignedAssessments = async (instructorId) => {
         try {
-            const mentorAssignmentsRef = collection(db, "mentorAssignments");
+            // Get assessments that this instructor has created
+            const assessmentsRef = collection(db, "assessments");
             const q = query(
-                mentorAssignmentsRef,
-                where("mentorId", "==", instructorId),
-                where("status", "==", "active")
+                assessmentsRef,
+                where("createdBy", "==", instructorId)
             );
 
             const snapshot = await getDocs(q);
-            const assignedStudents = [];
-
-            for (const assignmentDoc of snapshot.docs) {
-                const assignmentData = assignmentDoc.data();
-                const studentId = assignmentData.studentId;
-
-                const studentDoc = await getDoc(doc(db, "users", studentId));
-                if (studentDoc.exists()) {
-                    const studentData = studentDoc.data();
-                    assignedStudents.push({
-                        id: studentId,
-                        ...studentData,
-                        assignmentId: assignmentDoc.id,
-                        assignedDate: assignmentData.assignedDate
-                    });
-                }
-            }
-
-            return assignedStudents;
-        } catch (error) {
-            console.error("Error fetching assigned students:", error);
-            return [];
-        }
-    };
-
-    const fetchAvailableStudents = async (instructor) => {
-        if (!instructor || !instructor.college) {
-            setAvailableStudents([]);
-            return;
-        }
-
-        try {
-            // Get all students from the same college
-            const usersRef = collection(db, "users");
-            const q = query(
-                usersRef,
-                where("role", "==", "student"),
-                where("college", "==", instructor.college)
-            );
-
-            const snapshot = await getDocs(q);
-            const allCollegeStudents = snapshot.docs.map(doc => ({
+            const instructorAssessments = snapshot.docs.map(doc => ({
                 id: doc.id,
                 ...doc.data()
             }));
 
-            // Get students already assigned to this instructor
-            const assignedStudents = await fetchAssignedStudents(instructor.id);
-            const assignedStudentIds = assignedStudents.map(s => s.id);
+            return instructorAssessments;
+        } catch (error) {
+            console.error("Error fetching instructor assessments:", error);
+            return [];
+        }
+    };
 
-            // Filter: Show students NOT already assigned to this instructor
-            const available = allCollegeStudents.filter(student =>
-                !assignedStudentIds.includes(student.id)
+    const fetchAlreadyAssignedAssessments = async (instructorId) => {
+        try {
+            // Get students assigned to this instructor
+            const assignedStudents = await getAssignedStudents(instructorId);
+            if (assignedStudents.length === 0) return [];
+
+            // Get all assessmentAccess documents for these students
+            const alreadyAssigned = [];
+
+            for (const student of assignedStudents) {
+                const assessmentAccessRef = collection(db, "users", student.id, "assessmentAccess");
+                const q = query(
+                    assessmentAccessRef,
+                    where("mentorId", "==", instructorId),
+                    where("status", "==", "active")
+                );
+
+                const snapshot = await getDocs(q);
+                snapshot.forEach(doc => {
+                    const accessData = doc.data();
+                    // Get assessment details
+                    alreadyAssigned.push({
+                        accessId: doc.id,
+                        ...accessData,
+                        studentId: student.id,
+                        studentName: student.fullName
+                    });
+                });
+            }
+
+            // Remove duplicates (same assessment assigned to multiple students)
+            const uniqueAssessments = [];
+            const seenIds = new Set();
+
+            for (const assessment of alreadyAssigned) {
+                if (!seenIds.has(assessment.assessmentId)) {
+                    seenIds.add(assessment.assessmentId);
+                    uniqueAssessments.push(assessment);
+                }
+            }
+
+            return uniqueAssessments;
+        } catch (error) {
+            console.error("Error fetching already assigned assessments:", error);
+            return [];
+        }
+    };
+
+    const fetchAssessmentsForInstructor = async (instructorId) => {
+        if (!instructorId) {
+            setAvailableAssessments([]);
+            setAlreadyAssignedAssessments([]);
+            return;
+        }
+
+        try {
+            // Get all assessments created by this instructor
+            const assessmentsRef = collection(db, "assessments");
+            const q = query(
+                assessmentsRef,
+                where("createdBy", "==", instructorId)
             );
 
-            setAvailableStudents(available);
-            setSelectedStudents([]); // Reset selected students
+            const snapshot = await getDocs(q);
+            const allAssessments = snapshot.docs.map(doc => ({
+                id: doc.id,
+                ...doc.data()
+            }));
 
-            console.log('Available students:', {
-                totalStudents: allCollegeStudents.length,
-                alreadyAssigned: assignedStudentIds.length,
+            // Get already assigned assessments
+            const alreadyAssigned = await fetchAlreadyAssignedAssessments(instructorId);
+            const alreadyAssignedIds = alreadyAssigned.map(a => a.assessmentId);
+
+            // Filter out assessments that are already assigned
+            const available = allAssessments.filter(assessment =>
+                !alreadyAssignedIds.includes(assessment.id)
+            );
+
+            const inst = auth.user.uid;
+
+            const q_2 = query(
+                assessmentsRef,
+                where("createdBy", "==", inst)
+            );
+
+            setAvailableAssessments(await getDocs(q_2).then(snap => snap.docs.map(doc => ({ id: doc.id, ...doc.data() }))));
+            setAlreadyAssignedAssessments(alreadyAssigned);
+            setSelectedAssessments([]); // Reset selected assessments
+
+            console.log('Assessment data for instructor:', {
+                instructorId,
+                allAssessments: allAssessments.length,
+                alreadyAssigned: alreadyAssigned.length,
                 available: available.length,
-                instructor: instructor.fullName
+                alreadyAssignedIds,
+                availableTitles: available.map(a => a.title)
             });
 
         } catch (error) {
-            console.error("Error fetching available students:", error);
+            console.error("Error fetching assessments:", error);
             toast({
                 title: "Error",
-                description: "Failed to load available students",
+                description: "Failed to load assessments",
                 variant: "destructive"
             });
         }
@@ -293,10 +345,11 @@ export default function PartnerInstructorManagement() {
         setAssignCourseDialogOpen(true);
     };
 
-    const handleOpenAssignStudentsDialog = async (instructor) => {
+    const handleOpenAssignAssessmentDialog = async (instructor) => {
         setSelectedInstructor(instructor);
-        await fetchAvailableStudents(instructor);
-        setAssignStudentsDialogOpen(true);
+        setSelectedCourseId("");
+        await fetchAssessmentsForInstructor(instructor.id);
+        setAssignAssessmentDialogOpen(true);
     };
 
     const handleAssignCourse = async () => {
@@ -363,64 +416,117 @@ export default function PartnerInstructorManagement() {
         }
     };
 
-    const handleAssignStudents = async () => {
-        if (!selectedInstructor || selectedStudents.length === 0) {
+    const handleAssignAssessment = async () => {
+        if (!selectedInstructor || selectedAssessments.length === 0) {
             toast({
                 title: "Error",
-                description: "Please select at least one student",
+                description: "Please select at least one assessment",
                 variant: "destructive"
             });
             return;
         }
 
         try {
-            setAssigningStudents(true);
+            setAssigningAssessment(true);
+
+            // Get all students assigned to this instructor
+            const assignedStudents = await getAssignedStudents(selectedInstructor.id);
+
+            if (assignedStudents.length === 0) {
+                toast({
+                    title: "No Students",
+                    description: "This instructor has no assigned students. Please assign students first.",
+                    variant: "destructive"
+                });
+                return;
+            }
 
             const batch = writeBatch(db);
 
-            // Assign each selected student to the instructor
-            for (const studentId of selectedStudents) {
-                const assignmentId = `${studentId}_${selectedInstructor.id}`;
-                const assignmentRef = doc(db, "mentorAssignments", assignmentId);
+            // For each selected assessment, grant access to all assigned students
+            for (const assessmentId of selectedAssessments) {
+                const assessmentDoc = await getDoc(doc(db, "assessments", assessmentId));
+                const assessmentData = assessmentDoc.data();
 
-                // Check if already assigned
-                const existingAssignment = await getDoc(assignmentRef);
+                for (const student of assignedStudents) {
+                    const accessId = `${student.id}_${assessmentId}`;
+                    const accessRef = doc(db, "users", student.id, "assessmentAccess", accessId);
 
-                if (!existingAssignment.exists()) {
-                    batch.set(assignmentRef, {
-                        studentId,
-                        mentorId: selectedInstructor.id,
-                        status: "active",
-                        assignedBy: userData.uid,
-                        assignedAt: serverTimestamp(),
-                        college: selectedInstructor.college,
-                        createdAt: serverTimestamp(),
-                        updatedAt: serverTimestamp()
-                    });
+                    // Check if already has access
+                    const existingAccess = await getDoc(accessRef);
+
+                    if (!existingAccess.exists()) {
+                        batch.set(accessRef, {
+                            assessmentId,
+                            studentId: student.id,
+                            mentorId: selectedInstructor.id,
+                            grantedBy: selectedInstructor.id,
+                            grantedByName: selectedInstructor.fullName,
+                            assessmentTitle: assessmentData.title,
+                            grantedAt: serverTimestamp(),
+                            status: "active",
+                            createdAt: serverTimestamp()
+                        });
+                    }
                 }
             }
 
             await batch.commit();
 
-            // Refresh data
-            await fetchData();
-            await fetchAvailableStudents(selectedInstructor);
+            // Refresh the assessments list
+            await fetchAssessmentsForInstructor(selectedInstructor.id);
 
             toast({
                 title: "Success",
-                description: `Assigned ${selectedStudents.length} student(s) to ${selectedInstructor.fullName}`,
+                description: `${selectedAssessments.length} assessment(s) assigned to ${assignedStudents.length} student(s)`,
                 variant: "default"
             });
 
+            setSelectedAssessments([]);
+
         } catch (error) {
-            console.error("Error assigning students:", error);
+            console.error("Error assigning assessments:", error);
             toast({
                 title: "Error",
-                description: "Failed to assign students",
+                description: "Failed to assign assessments",
                 variant: "destructive"
             });
         } finally {
-            setAssigningStudents(false);
+            setAssigningAssessment(false);
+        }
+    };
+
+    const getAssignedStudents = async (instructorId) => {
+        try {
+            const mentorAssignmentsRef = collection(db, "mentorAssignments");
+            const q = query(
+                mentorAssignmentsRef,
+                where("mentorId", "==", instructorId),
+                where("status", "==", "active")
+            );
+
+            const snapshot = await getDocs(q);
+            const assignedStudents = [];
+
+            for (const assignmentDoc of snapshot.docs) {
+                const assignmentData = assignmentDoc.data();
+                const studentId = assignmentData.studentId;
+
+                const studentDoc = await getDoc(doc(db, "users", studentId));
+                if (studentDoc.exists()) {
+                    const studentData = studentDoc.data();
+                    assignedStudents.push({
+                        id: studentId,
+                        ...studentData,
+                        assignmentId: assignmentDoc.id
+                    });
+                }
+            }
+
+            return assignedStudents;
+        } catch (error) {
+            console.error("Error fetching assigned students:", error);
+            return [];
         }
     };
 
@@ -459,56 +565,67 @@ export default function PartnerInstructorManagement() {
         }
     };
 
-    const handleUnassignStudent = async (instructorId, studentId, studentName) => {
-        if (!window.confirm(`Are you sure you want to unassign ${studentName} from this instructor?`)) {
+    const handleUnassignAssessment = async (instructorId, assessmentId, assessmentTitle) => {
+        if (!window.confirm(`Are you sure you want to remove "${assessmentTitle}" from this instructor?`)) {
             return;
         }
 
         try {
-            const assignmentId = `${studentId}_${instructorId}`;
-            const assignmentRef = doc(db, "mentorAssignments", assignmentId);
+            // Get all students assigned to this instructor
+            const assignedStudents = await getAssignedStudents(instructorId);
+            const batch = writeBatch(db);
 
-            await updateDoc(assignmentRef, {
-                status: "inactive",
-                unassignedAt: serverTimestamp(),
-                unassignedBy: userData.uid,
-                updatedAt: serverTimestamp()
-            });
+            // Remove access for all assigned students
+            for (const student of assignedStudents) {
+                const accessId = `${student.id}_${assessmentId}`;
+                const accessRef = doc(db, "users", student.id, "assessmentAccess", accessId);
+
+                // Check if access exists
+                const accessDoc = await getDoc(accessRef);
+                if (accessDoc.exists()) {
+                    batch.delete(accessRef);
+                }
+            }
+
+            await batch.commit();
 
             // Refresh data
             await fetchData();
+            if (selectedInstructor?.id === instructorId) {
+                await fetchAssessmentsForInstructor(instructorId);
+            }
 
             toast({
                 title: "Success",
-                description: "Student unassigned successfully",
+                description: "Assessment access removed from all assigned students",
                 variant: "default"
             });
 
         } catch (error) {
-            console.error("Error unassigning student:", error);
+            console.error("Error unassigning assessment:", error);
             toast({
                 title: "Error",
-                description: "Failed to unassign student",
+                description: "Failed to unassign assessment",
                 variant: "destructive"
             });
         }
     };
 
-    const toggleStudentSelection = (studentId) => {
-        setSelectedStudents(prev => {
-            if (prev.includes(studentId)) {
-                return prev.filter(id => id !== studentId);
+    const toggleAssessmentSelection = (assessmentId) => {
+        setSelectedAssessments(prev => {
+            if (prev.includes(assessmentId)) {
+                return prev.filter(id => id !== assessmentId);
             } else {
-                return [...prev, studentId];
+                return [...prev, assessmentId];
             }
         });
     };
 
-    const toggleSelectAll = () => {
-        if (selectedStudents.length === availableStudents.length) {
-            setSelectedStudents([]);
+    const toggleSelectAllAssessments = () => {
+        if (selectedAssessments.length === availableAssessments.length) {
+            setSelectedAssessments([]);
         } else {
-            setSelectedStudents(availableStudents.map(s => s.id));
+            setSelectedAssessments(availableAssessments.map(a => a.id));
         }
     };
 
@@ -544,7 +661,7 @@ export default function PartnerInstructorManagement() {
                 <div>
                     <h1 className="text-3xl font-bold tracking-tight">Partner Instructor Management</h1>
                     <p className="text-muted-foreground mt-2">
-                        Assign courses and students to partner instructors
+                        Assign courses and assessments to partner instructors
                     </p>
                 </div>
                 <Button onClick={fetchData} className="gap-2">
@@ -598,10 +715,10 @@ export default function PartnerInstructorManagement() {
                                             <Plus className="h-4 w-4 mr-2" />
                                             Assign Course
                                         </DropdownMenuItem>
-                                        <DropdownMenuItem onClick={() => handleOpenAssignStudentsDialog(instructor)}>
-                                            <UserPlus className="h-4 w-4 mr-2" />
-                                            Assign Students
-                                        </DropdownMenuItem>
+                                        {/* <DropdownMenuItem onClick={() => handleOpenAssignAssessmentDialog(instructor)}>
+                                            <FileText className="h-4 w-4 mr-2" />
+                                            Assign Assessments
+                                        </DropdownMenuItem> */}
                                         <DropdownMenuSeparator />
                                         <DropdownMenuItem className="text-red-600">
                                             <Trash2 className="h-4 w-4 mr-2" />
@@ -629,9 +746,9 @@ export default function PartnerInstructorManagement() {
                             {/* Stats */}
                             <div className="grid grid-cols-2 gap-3">
                                 <div className="text-center p-3 bg-blue-50 rounded-lg">
-                                    <Users className="h-5 w-5 text-blue-600 mx-auto mb-1" />
-                                    <p className="text-lg font-bold">{instructor.assignedStudentsCount}</p>
-                                    <p className="text-xs text-muted-foreground">Students</p>
+                                    <FileText className="h-5 w-5 text-blue-600 mx-auto mb-1" />
+                                    <p className="text-lg font-bold">{instructor.assignedAssessmentsCount}</p>
+                                    <p className="text-xs text-muted-foreground">Created</p>
                                 </div>
                                 <div className="text-center p-3 bg-green-50 rounded-lg">
                                     <BookOpen className="h-5 w-5 text-green-600 mx-auto mb-1" />
@@ -676,43 +793,55 @@ export default function PartnerInstructorManagement() {
                                 </div>
                             </div>
 
-                            {/* Assigned Students */}
+                            {/* Created & Assigned Assessments */}
                             <div className="flex-1">
                                 <div className="flex items-center justify-between mb-2">
-                                    <h4 className="text-sm font-semibold">Assigned Students</h4>
+                                    <h4 className="text-sm font-semibold">Assessments</h4>
                                     <span className="text-xs text-muted-foreground bg-muted px-2 py-1 rounded">
-                                        {instructor.assignedStudentsCount}
+                                        {instructor.assignedAssessmentsCount} created
                                     </span>
                                 </div>
                                 <div className="h-32 overflow-y-auto border rounded-md">
                                     <div className="space-y-2 pr-4">
-                                        {instructor.assignedStudentsList && instructor.assignedStudentsList.length > 0 ? (
-                                            instructor.assignedStudentsList.slice(0, 5).map(student => (
-                                                <div key={student.id} className="flex items-center justify-between p-2 bg-muted/30 rounded group">
-                                                    <div className="flex items-center gap-2 min-w-0 flex-1">
-                                                        <Avatar className="h-6 w-6">
-                                                            <AvatarFallback className="text-xs">
-                                                                {student.fullName?.[0]?.toUpperCase() || "S"}
-                                                            </AvatarFallback>
-                                                        </Avatar>
-                                                        <div className="min-w-0">
-                                                            <p className="text-sm font-medium truncate">{student.fullName}</p>
-                                                            <p className="text-xs text-muted-foreground truncate">{student.email}</p>
+                                        {instructor.assignedAssessmentsList && instructor.assignedAssessmentsList.length > 0 ? (
+                                            instructor.assignedAssessmentsList.slice(0, 5).map(assessment => {
+                                                const isAssigned = instructor.alreadyAssignedAssessmentsList?.some(
+                                                    a => a.assessmentId === assessment.id
+                                                );
+
+                                                return (
+                                                    <div key={assessment.id} className="flex items-center justify-between p-2 bg-muted/30 rounded group">
+                                                        <div className="flex items-center gap-2 min-w-0 flex-1">
+                                                            <BarChart className="h-3 w-3 text-purple-600 shrink-0" />
+                                                            <div className="min-w-0">
+                                                                <p className="text-sm font-medium truncate">{assessment.title}</p>
+                                                                <p className="text-xs text-muted-foreground truncate">
+                                                                    {assessment.questions?.length || 0} questions
+                                                                    {isAssigned && " • Assigned"}
+                                                                </p>
+                                                            </div>
+                                                        </div>
+                                                        <div className="flex items-center gap-1">
+                                                            {isAssigned && (
+                                                                <Badge className="bg-green-100 text-green-800 text-xs mr-1">
+                                                                    Assigned
+                                                                </Badge>
+                                                            )}
+                                                            <Button
+                                                                variant="ghost"
+                                                                size="icon"
+                                                                className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+                                                                onClick={() => handleUnassignAssessment(instructor.id, assessment.id, assessment.title)}
+                                                            >
+                                                                <X className="h-3 w-3" />
+                                                            </Button>
                                                         </div>
                                                     </div>
-                                                    <Button
-                                                        variant="ghost"
-                                                        size="icon"
-                                                        className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
-                                                        onClick={() => handleUnassignStudent(instructor.id, student.id, student.fullName)}
-                                                    >
-                                                        <X className="h-3 w-3" />
-                                                    </Button>
-                                                </div>
-                                            ))
+                                                );
+                                            })
                                         ) : (
                                             <div className="text-center py-3 text-sm text-muted-foreground">
-                                                No students assigned
+                                                No assessments created
                                             </div>
                                         )}
                                     </div>
@@ -734,10 +863,10 @@ export default function PartnerInstructorManagement() {
                                     variant="outline"
                                     size="sm"
                                     className="gap-1"
-                                    onClick={() => handleOpenAssignStudentsDialog(instructor)}
+                                    onClick={() => handleOpenAssignAssessmentDialog(instructor)}
                                 >
-                                    <UserPlus className="h-3 w-3" />
-                                    Students
+                                    <FileText className="h-3 w-3" />
+                                    Assessments
                                 </Button>
                             </div>
                         </CardContent>
@@ -804,7 +933,7 @@ export default function PartnerInstructorManagement() {
                                     Course will be assigned to {selectedInstructor?.fullName}
                                 </p>
                                 <p className="text-sm text-green-700 mt-1">
-                                    The partner instructor will be able to enroll students in this course.
+                                    The partner instructor will be able to create and assign assessments for this course.
                                 </p>
                             </div>
                         )}
@@ -835,17 +964,17 @@ export default function PartnerInstructorManagement() {
                 </DialogContent>
             </Dialog>
 
-            {/* Assign Students Dialog */}
-            <Dialog open={assignStudentsDialogOpen} onOpenChange={setAssignStudentsDialogOpen}>
-                <DialogContent className="sm:max-w-xl">
+            {/* Assign Assessments Dialog */}
+            <Dialog open={assignAssessmentDialogOpen} onOpenChange={setAssignAssessmentDialogOpen}>
+                <DialogContent className="sm:max-w-2xl max-h-[80vh] overflow-y-auto">
                     <DialogHeader>
-                        <DialogTitle>Assign Students to Partner Instructor</DialogTitle>
+                        <DialogTitle>Assign Assessments to Students</DialogTitle>
                         <DialogDescription>
-                            Select students from {selectedInstructor?.college} to assign to {selectedInstructor?.fullName}
+                            Select assessments created by {selectedInstructor?.fullName} to assign to their students
                         </DialogDescription>
                     </DialogHeader>
 
-                    <div className="space-y-4 py-4">
+                    <div className="space-y-6 py-4">
                         <div className="space-y-2">
                             <Label>Partner Instructor</Label>
                             <div className="p-3 border rounded-lg bg-muted/30">
@@ -864,18 +993,49 @@ export default function PartnerInstructorManagement() {
                             </div>
                         </div>
 
+                        {/* Already Assigned Assessments */}
+                        {alreadyAssignedAssessments.length > 0 && (
+                            <div className="space-y-2">
+                                <Label className="text-green-700">Already Assigned Assessments ({alreadyAssignedAssessments.length})</Label>
+                                <div className="h-40 overflow-y-auto border rounded-md">
+                                    <div className="p-2">
+                                        {alreadyAssignedAssessments.map(assessment => (
+                                            <div
+                                                key={assessment.accessId}
+                                                className="flex items-center gap-3 p-3 bg-green-50 rounded-lg mb-2"
+                                            >
+                                                <CheckCircle className="h-5 w-5 text-green-600" />
+                                                <div className="flex-1 min-w-0">
+                                                    <p className="text-sm font-medium truncate">{assessment.assessmentTitle}</p>
+                                                    <p className="text-xs text-green-700 truncate">
+                                                        Assigned to students
+                                                    </p>
+                                                </div>
+                                                <Badge className="bg-green-100 text-green-800 text-xs">
+                                                    Assigned
+                                                </Badge>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Available Assessments */}
                         <div className="space-y-2">
                             <div className="flex items-center justify-between">
-                                <Label>Available Students ({availableStudents.length})</Label>
-                                {availableStudents.length > 0 && (
+                                <Label>
+                                    Available Assessments ({availableAssessments.length})
+                                </Label>
+                                {availableAssessments.length > 0 && (
                                     <div className="flex items-center gap-2">
                                         <Button
                                             variant="ghost"
                                             size="sm"
-                                            onClick={toggleSelectAll}
+                                            onClick={toggleSelectAllAssessments}
                                             className="h-8 text-xs"
                                         >
-                                            {selectedStudents.length === availableStudents.length ? (
+                                            {selectedAssessments.length === availableAssessments.length ? (
                                                 <>
                                                     <CheckSquare className="h-3 w-3 mr-1" />
                                                     Deselect All
@@ -891,31 +1051,33 @@ export default function PartnerInstructorManagement() {
                                 )}
                             </div>
 
-                            {availableStudents.length > 0 ? (
+                            {availableAssessments.length > 0 ? (
                                 <div className="h-64 overflow-y-auto border rounded-md">
                                     <div className="p-2">
-                                        {availableStudents.map(student => (
+                                        {availableAssessments.map(assessment => (
                                             <div
-                                                key={student.id}
+                                                key={assessment.id}
                                                 className="flex items-center gap-3 p-3 hover:bg-muted/50 rounded-lg cursor-pointer transition-colors"
-                                                onClick={() => toggleStudentSelection(student.id)}
+                                                onClick={() => toggleAssessmentSelection(assessment.id)}
                                             >
                                                 <Checkbox
-                                                    checked={selectedStudents.includes(student.id)}
-                                                    onCheckedChange={() => toggleStudentSelection(student.id)}
+                                                    checked={selectedAssessments.includes(assessment.id)}
+                                                    onCheckedChange={() => toggleAssessmentSelection(assessment.id)}
                                                 />
-                                                <Avatar className="h-8 w-8">
-                                                    <AvatarFallback className="text-xs">
-                                                        {student.fullName?.[0]?.toUpperCase() || "S"}
-                                                    </AvatarFallback>
-                                                </Avatar>
+                                                <BarChart className="h-8 w-8 text-purple-600" />
                                                 <div className="flex-1 min-w-0">
-                                                    <p className="text-sm font-medium truncate">{student.fullName}</p>
-                                                    <p className="text-xs text-muted-foreground truncate">{student.email}</p>
-                                                    <p className="text-xs text-muted-foreground">{student.rollNumber || "No roll number"}</p>
+                                                    <p className="text-sm font-medium truncate">{assessment.title}</p>
+                                                    <p className="text-xs text-muted-foreground truncate">
+                                                        {assessment.questions?.length || 0} questions
+                                                    </p>
+                                                    {assessment.description && (
+                                                        <p className="text-xs text-muted-foreground truncate mt-1">
+                                                            {assessment.description}
+                                                        </p>
+                                                    )}
                                                 </div>
-                                                <Badge variant="outline" className="text-xs">
-                                                    Available
+                                                <Badge variant="outline" className="text-xs capitalize">
+                                                    {assessment.difficulty || "Medium"}
                                                 </Badge>
                                             </div>
                                         ))}
@@ -923,22 +1085,28 @@ export default function PartnerInstructorManagement() {
                                 </div>
                             ) : (
                                 <div className="text-center py-8 border-2 border-dashed rounded-lg">
-                                    <Users className="h-12 w-12 mx-auto mb-3 text-muted-foreground opacity-50" />
-                                    <p className="text-muted-foreground font-medium">No students available</p>
+                                    <FileText className="h-12 w-12 mx-auto mb-3 text-muted-foreground opacity-50" />
+                                    <p className="text-muted-foreground font-medium">
+                                        {alreadyAssignedAssessments.length > 0
+                                            ? "All assessments are already assigned"
+                                            : "No assessments available"}
+                                    </p>
                                     <p className="text-sm text-muted-foreground mt-1">
-                                        All students from {selectedInstructor?.college} are already assigned to partner instructors
+                                        {alreadyAssignedAssessments.length > 0
+                                            ? "This instructor has already assigned all their assessments to students."
+                                            : "This instructor hasn't created any assessments yet."}
                                     </p>
                                 </div>
                             )}
                         </div>
 
-                        {selectedStudents.length > 0 && (
+                        {selectedAssessments.length > 0 && (
                             <div className="p-3 border rounded-lg bg-blue-50">
                                 <p className="text-sm font-medium text-blue-800">
-                                    {selectedStudents.length} student{selectedStudents.length !== 1 ? 's' : ''} selected
+                                    {selectedAssessments.length} assessment{selectedAssessments.length !== 1 ? 's' : ''} selected
                                 </p>
                                 <p className="text-sm text-blue-700 mt-1">
-                                    These students will be assigned to {selectedInstructor?.fullName} and will only be visible to this partner instructor.
+                                    These assessments will be assigned to all students managed by {selectedInstructor?.fullName}.
                                 </p>
                             </div>
                         )}
@@ -948,24 +1116,24 @@ export default function PartnerInstructorManagement() {
                         <Button
                             variant="outline"
                             onClick={() => {
-                                setAssignStudentsDialogOpen(false);
-                                setSelectedStudents([]);
+                                setAssignAssessmentDialogOpen(false);
+                                setSelectedAssessments([]);
                             }}
-                            disabled={assigningStudents}
+                            disabled={assigningAssessment}
                         >
                             Cancel
                         </Button>
                         <Button
-                            onClick={handleAssignStudents}
-                            disabled={selectedStudents.length === 0 || assigningStudents}
+                            onClick={handleAssignAssessment}
+                            disabled={selectedAssessments.length === 0 || assigningAssessment}
                         >
-                            {assigningStudents ? (
+                            {assigningAssessment ? (
                                 <>
                                     <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                                     Assigning...
                                 </>
                             ) : (
-                                `Assign ${selectedStudents.length} Student${selectedStudents.length !== 1 ? 's' : ''}`
+                                `Assign ${selectedAssessments.length} Assessment${selectedAssessments.length !== 1 ? 's' : ''}`
                             )}
                         </Button>
                     </DialogFooter>

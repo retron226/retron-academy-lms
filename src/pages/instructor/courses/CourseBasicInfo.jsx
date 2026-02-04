@@ -28,6 +28,7 @@ export default function CourseBasicInfo({ course, setCourse, thumbnailFile, setT
                     />
 
                     <FormField
+
                         label="Description"
                         as="textarea"
                         rows={4}
@@ -60,7 +61,7 @@ function FormField({ label, as = "input", rows, ...props }) {
         <motion.div className="space-y-2" whileHover={{ scale: 1.01 }}>
             <label className="text-sm font-medium">{label}</label>
             <Component
-                className={as === "textarea" ? "min-h-[120px] p-3" : ""}
+                className={as === "textarea" ? "min-h-[120px] p-3 w-full" : ""}
                 rows={rows}
                 {...props}
             />
@@ -70,25 +71,26 @@ function FormField({ label, as = "input", rows, ...props }) {
 
 function AccessCodeField({ accessCode, onGenerate, onUpdate }) {
     return (
-        <motion.div className="space-y-2" whileHover={{ scale: 1.01 }}>
-            <label className="text-sm font-medium">Access Code</label>
-            <div className="flex gap-2">
-                <Input
-                    value={accessCode}
-                    onChange={(e) => onUpdate(e.target.value)}
-                    placeholder="ACCESS-CODE"
-                    className="font-mono"
-                />
-                <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
-                    <Button type="button" variant="outline" onClick={onGenerate}>
-                        Generate
-                    </Button>
-                </motion.div>
-            </div>
-            <p className="text-xs text-muted-foreground">
-                Share this code with students to allow them to enroll.
-            </p>
-        </motion.div>
+        // <motion.div className="space-y-2" whileHover={{ scale: 1.01 }}>
+        //     <label className="text-sm font-medium">Access Code</label>
+        //     <div className="flex gap-2">
+        //         <Input
+        //             value={accessCode}
+        //             onChange={(e) => onUpdate(e.target.value)}
+        //             placeholder="ACCESS-CODE"
+        //             className="font-mono"
+        //         />
+        //         <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+        //             <Button type="button" variant="outline" onClick={onGenerate}>
+        //                 Generate
+        //             </Button>
+        //         </motion.div>
+        //     </div>
+        //     <p className="text-xs text-muted-foreground">
+        //         Share this code with students to allow them to enroll.
+        //     </p>
+        // </motion.div>
+        <></>
     );
 }
 

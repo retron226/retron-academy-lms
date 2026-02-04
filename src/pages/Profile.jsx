@@ -145,7 +145,7 @@ export default function Profile() {
                         </div>
 
                         {/* Institution - Editable Dropdown */}
-                        <div className="space-y-2">
+                        {/* <div className="space-y-2">
                             <label htmlFor="institutionId" className="text-sm font-medium flex items-center gap-2">
                                 <Building2 className="h-4 w-4" /> Institution
                             </label>
@@ -167,7 +167,7 @@ export default function Profile() {
                             <p className="text-xs text-muted-foreground">
                                 Please select the correct institution you belong to.
                             </p>
-                        </div>
+                        </div> */}
 
                         <div className="pt-4 flex justify-end">
                             <Button type="submit" disabled={saving} className="w-full sm:w-auto">

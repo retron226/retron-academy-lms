@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { db } from "../../lib/firebase";
-import { collection, query, where, getDocs, deleteDoc, doc, updateDoc, getDoc } from "firebase/firestore";
+import { collection, query, where, getDocs, deleteDoc, doc, updateDoc, getDoc, writeBatch } from "firebase/firestore";
 import { useAuth } from "../../contexts/AuthContext";
 import { Link } from "react-router-dom";
 import { Button } from "../../components/ui/button";
@@ -107,13 +107,116 @@ export default function InstructorCourses() {
         }
     };
 
+    const deleteCourseSubcollections = async (courseId) => {
+        try {
+            // Delete sections and their modules
+            const sectionsRef = collection(db, "courses", courseId, "sections");
+            const sectionsSnap = await getDocs(sectionsRef);
+
+            const sectionsBatch = writeBatch(db);
+
+            for (const sectionDoc of sectionsSnap.docs) {
+                const sectionId = sectionDoc.id;
+
+                // Delete modules in this section
+                const modulesRef = collection(db, "courses", courseId, "sections", sectionId, "modules");
+                const modulesSnap = await getDocs(modulesRef);
+
+                modulesSnap.docs.forEach(moduleDoc => {
+                    sectionsBatch.delete(moduleDoc.ref);
+                });
+
+                // Delete section
+                sectionsBatch.delete(sectionDoc.ref);
+            }
+
+            await sectionsBatch.commit();
+            console.log(`Deleted ${sectionsSnap.size} sections and their modules`);
+
+        } catch (error) {
+            console.error("Error deleting subcollections:", error);
+            throw error;
+        }
+    };
+
     const handleDeleteCourse = async (courseId) => {
-        if (window.confirm("Are you sure you want to delete this course?")) {
+        if (window.confirm("Are you sure you want to delete this course? This will remove it for ALL students and co-instructors and cannot be undone.")) {
             try {
-                await deleteDoc(doc(db, "courses", courseId));
+                // Get course data first for confirmation
+                const courseRef = doc(db, "courses", courseId);
+                const courseSnap = await getDoc(courseRef);
+
+                if (!courseSnap.exists()) {
+                    alert("Course not found!");
+                    return;
+                }
+
+                const courseData = courseSnap.data();
+
+                // Double confirmation for courses with students
+                const enrollmentsQuery = query(
+                    collection(db, "enrollments"),
+                    where("courseId", "==", courseId)
+                );
+                const enrollmentsSnap = await getDocs(enrollmentsQuery);
+                const studentCount = enrollmentsSnap.size;
+
+                if (studentCount > 0) {
+                    const confirmed = window.confirm(
+                        `This course has ${studentCount} enrolled student(s). Deleting will remove it from their dashboard permanently. Continue?`
+                    );
+                    if (!confirmed) return;
+                }
+
+                // Step 1: Delete all student enrollments
+                const enrollmentsBatch = writeBatch(db);
+                enrollmentsSnap.docs.forEach(docSnap => {
+                    enrollmentsBatch.delete(docSnap.ref);
+                });
+                await enrollmentsBatch.commit();
+                console.log(`Deleted ${studentCount} enrollments`);
+
+                // Step 2: Delete all course progress data
+                const progressQuery = query(
+                    collection(db, "userProgress"),
+                    where("courseId", "==", courseId)
+                );
+                const progressSnap = await getDocs(progressQuery);
+                const progressBatch = writeBatch(db);
+                progressSnap.docs.forEach(docSnap => {
+                    progressBatch.delete(docSnap.ref);
+                });
+                await progressBatch.commit();
+                console.log(`Deleted ${progressSnap.size} progress records`);
+
+                // Step 3: Delete all course invitations
+                const invitesQuery = query(
+                    collection(db, "invitations"),
+                    where("courseId", "==", courseId)
+                );
+                const invitesSnap = await getDocs(invitesQuery);
+                const invitesBatch = writeBatch(db);
+                invitesSnap.docs.forEach(docSnap => {
+                    invitesBatch.delete(docSnap.ref);
+                });
+                await invitesBatch.commit();
+                console.log(`Deleted ${invitesSnap.size} invitations`);
+
+                // Step 4: Recursively delete all subcollections (sections, modules, etc.)
+                // This is the complex part - you may want to create a helper function
+                await deleteCourseSubcollections(courseId);
+
+                // Step 5: Finally delete the main course document
+                await deleteDoc(courseRef);
+
+                // Step 6: Update local state
                 setCourses(courses.filter(course => course.id !== courseId));
+
+                alert(`Course "${courseData.title}" and all related data deleted successfully.`);
+
             } catch (error) {
                 console.error("Error deleting course:", error);
+                alert("Failed to delete course. Please try again.");
             }
         }
     };

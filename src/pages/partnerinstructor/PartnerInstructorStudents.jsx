@@ -11,7 +11,8 @@ import {
     updateDoc,
     arrayUnion,
     arrayRemove,
-    serverTimestamp
+    serverTimestamp,
+    orderBy
 } from "firebase/firestore";
 import { useAuth } from "../../contexts/AuthContext";
 import {
@@ -23,7 +24,7 @@ import {
     TableRow
 } from "../../components/ui/table";
 import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
-import { Search, Eye, X, GraduationCap, Filter, UserCheck, Ban, CheckCircle, MoreVertical, Loader2, Mail, BookOpen, BarChart3, Clock, AlertCircle, PlusCircle, UserPlus } from "lucide-react";
+import { Search, Eye, X, GraduationCap, Filter, UserCheck, Ban, CheckCircle, MoreVertical, Loader2, Mail, BookOpen, BarChart3, Clock, AlertCircle, PlusCircle, UserPlus, FileText } from "lucide-react";
 import { Button } from "../../components/ui/button";
 import { Badge } from "../../components/ui/badge";
 import { createPortal } from "react-dom";
@@ -40,6 +41,7 @@ export default function PartnerInstructorStudents() {
     const [selectedStudent, setSelectedStudent] = useState(null);
     const [studentProgress, setStudentProgress] = useState([]);
     const [studentCourses, setStudentCourses] = useState([]);
+    const [studentAssessments, setStudentAssessments] = useState([]);
 
     // Course Filtering State
     const [courses, setCourses] = useState([]);
@@ -67,6 +69,11 @@ export default function PartnerInstructorStudents() {
     const [availableCoursesForEnrollment, setAvailableCoursesForEnrollment] = useState([]);
     const [enrolling, setEnrolling] = useState(false);
 
+    // Assessment enrollment state
+    const [selectedAssessmentForEnrollment, setSelectedAssessmentForEnrollment] = useState("");
+    const [availableAssessments, setAvailableAssessments] = useState([]);
+    const [assigningAssessments, setAssigningAssessments] = useState(false);
+
     useEffect(() => {
         if (userData?.uid) {
             fetchData();
@@ -87,6 +94,13 @@ export default function PartnerInstructorStudents() {
         return () => window.removeEventListener("scroll", handleScroll, true);
     }, []);
 
+    // Fetch available assessments on mount
+    useEffect(() => {
+        if (userData?.uid) {
+            fetchAvailableAssessments();
+        }
+    }, [userData]);
+
     // Main fetch function
     const fetchData = async () => {
         try {
@@ -105,6 +119,9 @@ export default function PartnerInstructorStudents() {
                 totalAssigned: assignedCount,
                 activeAssigned: activeCount
             });
+
+            console.log("assigedStudents: ");
+            console.log(assignedStudents);
 
             setCourses(assignedCourses);
             setStudents(assignedStudents);
@@ -156,15 +173,44 @@ export default function PartnerInstructorStudents() {
                 );
                 const coursesSnap = await getDocs(coursesQ);
 
-                const batchCourses = coursesSnap.docs.map(doc => {
-                    const courseData = doc.data();
+                const batchCourses = await Promise.all(coursesSnap.docs.map(async (courseDoc) => {
+                    const courseData = courseDoc.data();
+                    const courseId = courseDoc.id;
+
+                    // Fetch sections to get total modules count
+                    let totalModules = 0;
+                    try {
+                        const sectionsRef = collection(db, `courses/${courseId}/sections`);
+                        const sectionsQuery = query(sectionsRef, orderBy("order", "asc"));
+                        const sectionsSnap = await getDocs(sectionsQuery);
+
+                        sectionsSnap.forEach(sectionDoc => {
+                            const sectionData = sectionDoc.data();
+                            // Count direct modules in section
+                            const directModules = Array.isArray(sectionData.modules) ? sectionData.modules : [];
+                            totalModules += directModules.length;
+
+                            // Count modules in sub-sections
+                            const subSections = Array.isArray(sectionData.subSections) ? sectionData.subSections : [];
+                            subSections.forEach(subSection => {
+                                const subSectionModules = Array.isArray(subSection.modules) ? subSection.modules : [];
+                                totalModules += subSectionModules.length;
+                            });
+                        });
+                    } catch (error) {
+                        console.error(`Error fetching sections for course ${courseId}:`, error);
+                        // Fallback to courseData.modules if sections can't be fetched
+                        totalModules = courseData.modules?.length || 0;
+                    }
+
                     return {
-                        id: doc.id,
+                        id: courseId,
                         ...courseData,
+                        totalModules,
                         isAssigned: true,
-                        assignmentId: assignments.find(a => a.courseId === doc.id)?.id
+                        assignmentId: assignments.find(a => a.courseId === courseId)?.id
                     };
-                });
+                }));
 
                 coursesData.push(...batchCourses);
             }
@@ -173,6 +219,58 @@ export default function PartnerInstructorStudents() {
         } catch (error) {
             console.error("Error fetching assigned courses:", error);
             return [];
+        }
+    };
+
+    // Fetch available assessments for this partner instructor
+    const fetchAvailableAssessments = async () => {
+        try {
+            if (!userData?.uid) return;
+
+            // First check if user is a partner instructor
+            const partnerInstructorRef = doc(db, "partner_instructors", userData.uid);
+            const partnerSnap = await getDoc(partnerInstructorRef);
+
+            if (partnerSnap.exists()) {
+                const partnerData = partnerSnap.data();
+                const assignedCourses = partnerData.assignedCourses || [];
+
+                if (assignedCourses.length === 0) {
+                    setAvailableAssessments([]);
+                    return;
+                }
+
+                // Fetch assessments for assigned courses
+                const q = query(
+                    collection(db, "assessments"),
+                    where("courseId", "in", assignedCourses)
+                );
+
+                const snapshot = await getDocs(q);
+
+                const assessments = snapshot.docs.map(doc => ({
+                    id: doc.id,
+                    ...doc.data()
+                }));
+
+                setAvailableAssessments(assessments);
+                setSelectedAssessmentForEnrollment(assessments.length > 0 ? assessments[0].id : "");
+            } else {
+                // If not a partner instructor, fetch all assessments
+                const q = query(collection(db, "assessments"));
+                const snapshot = await getDocs(q);
+
+                const assessments = snapshot.docs.map(doc => ({
+                    id: doc.id,
+                    ...doc.data()
+                }));
+
+                setAvailableAssessments(assessments);
+                setSelectedAssessmentForEnrollment(assessments.length > 0 ? assessments[0].id : "");
+            }
+        } catch (error) {
+            console.error("Error fetching available assessments:", error);
+            setAvailableAssessments([]);
         }
     };
 
@@ -218,8 +316,11 @@ export default function PartnerInstructorStudents() {
 
                     const assignment = assignments.find(a => a.studentId === studentId);
 
-                    // Get enrolled courses
+                    // Get enrolled courses with proper module counting
                     const enrolledCourses = await getStudentEnrolledCourses(studentId);
+
+                    // Fetch assigned assessments
+                    const assignedAssessments = await fetchStudentAssignedAssessments(studentId);
 
                     // Fetch progress for enrolled courses
                     const progressMap = {};
@@ -231,30 +332,31 @@ export default function PartnerInstructorStudents() {
                             if (progressSnap.exists()) {
                                 const progressData = progressSnap.data();
                                 const completedModules = progressData.completedModules || [];
-                                const totalModules = course.modules?.length || course.totalModules || 1;
-                                const progressPercentage = Math.round((completedModules.length / totalModules) * 100);
+                                const progressPercentage = course.totalModules > 0
+                                    ? Math.round((completedModules.length / course.totalModules) * 100)
+                                    : 0;
 
                                 progressMap[course.id] = {
                                     ...progressData,
                                     progressPercentage,
                                     completedCount: completedModules.length,
-                                    totalModules
+                                    totalModules: course.totalModules
                                 };
                             } else {
                                 progressMap[course.id] = {
                                     completedModules: [],
                                     progressPercentage: 0,
                                     completedCount: 0,
-                                    totalModules: course.modules?.length || course.totalModules || 1
+                                    totalModules: course.totalModules
                                 };
                             }
                         } catch (error) {
-                            console.error(`Error fetching progress:`, error);
+                            console.error(`Error fetching progress for course ${course.id}:`, error);
                             progressMap[course.id] = {
                                 completedModules: [],
                                 progressPercentage: 0,
                                 completedCount: 0,
-                                totalModules: course.modules?.length || course.totalModules || 1
+                                totalModules: course.totalModules
                             };
                         }
                     }
@@ -268,7 +370,8 @@ export default function PartnerInstructorStudents() {
                         enrolledCourses,
                         enrollmentCount: enrolledCourses.length,
                         bannedFrom: studentData.bannedFrom || [],
-                        progressMap
+                        progressMap,
+                        assignedAssessments
                     });
                 }
             }
@@ -280,7 +383,7 @@ export default function PartnerInstructorStudents() {
         }
     };
 
-    // Get student's enrolled courses from multiple sources
+    // Get student's enrolled courses with proper module counting
     const getStudentEnrolledCourses = async (studentId) => {
         try {
             const enrolledCourses = [];
@@ -291,7 +394,7 @@ export default function PartnerInstructorStudents() {
 
             if (!enrollmentsSnap.empty) {
                 const enrollmentIds = enrollmentsSnap.docs.map(doc => doc.id);
-                const courses = await fetchCourseDetails(enrollmentIds);
+                const courses = await fetchCourseDetailsWithModules(enrollmentIds);
                 enrolledCourses.push(...courses);
             }
 
@@ -300,7 +403,7 @@ export default function PartnerInstructorStudents() {
             const userData = userDoc.data();
 
             if (userData?.enrolledCourses && Array.isArray(userData.enrolledCourses)) {
-                const courses = await fetchCourseDetails(userData.enrolledCourses);
+                const courses = await fetchCourseDetailsWithModules(userData.enrolledCourses);
                 // Filter out duplicates
                 courses.forEach(course => {
                     if (!enrolledCourses.find(ec => ec.id === course.id)) {
@@ -316,8 +419,8 @@ export default function PartnerInstructorStudents() {
         }
     };
 
-    // Helper to fetch course details
-    const fetchCourseDetails = async (courseIds) => {
+    // Helper to fetch course details with module counting from sections
+    const fetchCourseDetailsWithModules = async (courseIds) => {
         if (!courseIds || courseIds.length === 0) {
             return [];
         }
@@ -335,20 +438,75 @@ export default function PartnerInstructorStudents() {
                 );
                 const coursesSnap = await getDocs(coursesQ);
 
-                coursesSnap.docs.forEach(courseDoc => {
+                // Process each course in parallel
+                const batchCourses = await Promise.all(coursesSnap.docs.map(async (courseDoc) => {
                     const courseData = courseDoc.data();
-                    coursesData.push({
-                        id: courseDoc.id,
+                    const courseId = courseDoc.id;
+
+                    // Fetch sections to get total modules count
+                    let totalModules = 0;
+                    try {
+                        const sectionsRef = collection(db, `courses/${courseId}/sections`);
+                        const sectionsQuery = query(sectionsRef, orderBy("order", "asc"));
+                        const sectionsSnap = await getDocs(sectionsQuery);
+
+                        sectionsSnap.forEach(sectionDoc => {
+                            const sectionData = sectionDoc.data();
+                            // Count direct modules in section
+                            const directModules = Array.isArray(sectionData.modules) ? sectionData.modules : [];
+                            totalModules += directModules.length;
+
+                            // Count modules in sub-sections
+                            const subSections = Array.isArray(sectionData.subSections) ? sectionData.subSections : [];
+                            subSections.forEach(subSection => {
+                                const subSectionModules = Array.isArray(subSection.modules) ? subSection.modules : [];
+                                totalModules += subSectionModules.length;
+                            });
+                        });
+
+                        console.log(`Course ${courseData.title}: Found ${totalModules} total modules from sections`);
+                    } catch (error) {
+                        console.error(`Error fetching sections for course ${courseId}:`, error);
+                        // Fallback to courseData.modules if sections can't be fetched
+                        totalModules = courseData.modules?.length || 0;
+                        console.log(`Course ${courseData.title}: Using fallback module count: ${totalModules}`);
+                    }
+
+                    return {
+                        id: courseId,
                         ...courseData,
-                        totalModules: courseData.modules?.length || courseData.totalModules || 0
-                    });
-                });
+                        totalModules
+                    };
+                }));
+
+                coursesData.push(...batchCourses);
             } catch (error) {
                 console.error("Error fetching course batch:", error);
             }
         }
 
         return coursesData;
+    };
+
+    // Fetch student's assigned assessments
+    const fetchStudentAssignedAssessments = async (studentId) => {
+        try {
+            const assessmentAccessRef = collection(db, "users", studentId, "assessmentAccess");
+            const snapshot = await getDocs(assessmentAccessRef);
+
+            const assessments = [];
+            snapshot.forEach(doc => {
+                assessments.push({
+                    id: doc.id,
+                    ...doc.data()
+                });
+            });
+
+            return assessments;
+        } catch (error) {
+            console.error("Error fetching assigned assessments:", error);
+            return [];
+        }
     };
 
     const handleViewStudent = async (student) => {
@@ -368,8 +526,9 @@ export default function PartnerInstructorStudents() {
                 if (progressSnap.exists()) {
                     const progress = progressSnap.data();
                     const completedModules = progress.completedModules || [];
-                    const totalModules = course.modules?.length || course.totalModules || 1;
-                    const progressPercentage = Math.round((completedModules.length / totalModules) * 100);
+                    const progressPercentage = course.totalModules > 0
+                        ? Math.round((completedModules.length / course.totalModules) * 100)
+                        : 0;
 
                     progressData.push({
                         courseId: course.id,
@@ -378,7 +537,7 @@ export default function PartnerInstructorStudents() {
                         ...progress,
                         progressPercentage,
                         completedCount: completedModules.length,
-                        totalModules,
+                        totalModules: course.totalModules,
                         lastAccessed: progress.lastAccessed || null
                     });
                 } else {
@@ -390,7 +549,7 @@ export default function PartnerInstructorStudents() {
                         lastAccessed: null,
                         progressPercentage: 0,
                         completedCount: 0,
-                        totalModules: course.modules?.length || course.totalModules || 1
+                        totalModules: course.totalModules
                     });
                 }
             } catch (error) {
@@ -403,10 +562,14 @@ export default function PartnerInstructorStudents() {
                     lastAccessed: null,
                     progressPercentage: 0,
                     completedCount: 0,
-                    totalModules: course.modules?.length || course.totalModules || 1
+                    totalModules: course.totalModules
                 });
             }
         }
+
+        // Fetch assigned assessments for modal
+        const assignedAssessments = await fetchStudentAssignedAssessments(student.id);
+        setStudentAssessments(assignedAssessments);
 
         setStudentProgress(progressData);
         setIsModalLoading(false);
@@ -424,6 +587,13 @@ export default function PartnerInstructorStudents() {
 
         setAvailableCoursesForEnrollment(availableCourses);
         setSelectedCourseForEnrollment(availableCourses.length > 0 ? availableCourses[0].id : "");
+
+        setEnrollmentDialogOpen(true);
+    };
+
+    // Open assessment assignment dialog
+    const handleOpenAssessmentDialog = (student) => {
+        setSelectedStudentForEnrollment(student);
         setEnrollmentDialogOpen(true);
     };
 
@@ -470,6 +640,31 @@ export default function PartnerInstructorStudents() {
 
             const courseData = courseSnap.data();
 
+            // Calculate total modules for this course
+            let totalModules = 0;
+            try {
+                const sectionsRef = collection(db, `courses/${courseId}/sections`);
+                const sectionsQuery = query(sectionsRef, orderBy("order", "asc"));
+                const sectionsSnap = await getDocs(sectionsQuery);
+
+                sectionsSnap.forEach(sectionDoc => {
+                    const sectionData = sectionDoc.data();
+                    // Count direct modules in section
+                    const directModules = Array.isArray(sectionData.modules) ? sectionData.modules : [];
+                    totalModules += directModules.length;
+
+                    // Count modules in sub-sections
+                    const subSections = Array.isArray(sectionData.subSections) ? sectionData.subSections : [];
+                    subSections.forEach(subSection => {
+                        const subSectionModules = Array.isArray(subSection.modules) ? subSection.modules : [];
+                        totalModules += subSectionModules.length;
+                    });
+                });
+            } catch (error) {
+                console.error(`Error fetching sections for course ${courseId}:`, error);
+                totalModules = courseData.modules?.length || 0;
+            }
+
             // 1. Update user's enrolledCourses array
             await updateDoc(doc(db, "users", studentId), {
                 enrolledCourses: arrayUnion(courseId),
@@ -493,7 +688,7 @@ export default function PartnerInstructorStudents() {
                 enrolledAt: serverTimestamp(),
                 lastAccessed: serverTimestamp(),
                 completedModules: [],
-                totalModules: courseData.modules?.length || courseData.totalModules || 0,
+                totalModules: totalModules,
                 progressPercentage: 0,
                 mentorId: userData.uid,
                 lastUpdated: serverTimestamp()
@@ -505,7 +700,7 @@ export default function PartnerInstructorStudents() {
                     const newCourse = {
                         id: courseId,
                         ...courseData,
-                        totalModules: courseData.modules?.length || courseData.totalModules || 0
+                        totalModules: totalModules
                     };
 
                     return {
@@ -518,7 +713,7 @@ export default function PartnerInstructorStudents() {
                                 completedModules: [],
                                 progressPercentage: 0,
                                 completedCount: 0,
-                                totalModules: newCourse.totalModules,
+                                totalModules: totalModules,
                                 lastUpdated: serverTimestamp()
                             }
                         }
@@ -531,14 +726,16 @@ export default function PartnerInstructorStudents() {
 
             // Update selected student if modal is open
             if (selectedStudent && selectedStudent.id === studentId) {
+                const assignedAssessments = await fetchStudentAssignedAssessments(studentId);
                 setSelectedStudent(prev => ({
                     ...prev,
                     enrolledCourses: [...(prev.enrolledCourses || []), {
                         id: courseId,
                         ...courseData,
-                        totalModules: courseData.modules?.length || courseData.totalModules || 0
+                        totalModules: totalModules
                     }],
-                    enrollmentCount: (prev.enrollmentCount || 0) + 1
+                    enrollmentCount: (prev.enrollmentCount || 0) + 1,
+                    assignedAssessments
                 }));
             }
 
@@ -579,6 +776,126 @@ export default function PartnerInstructorStudents() {
             });
         } finally {
             setEnrolling(false);
+        }
+    };
+
+    // Add assessment assignment function
+    const handleAssignAssessment = async () => {
+        if (!selectedAssessmentForEnrollment || !selectedStudentForEnrollment) {
+            toast({
+                title: "Error",
+                description: "Please select an assessment",
+                variant: "destructive"
+            });
+            return;
+        }
+
+        try {
+            setAssigningAssessments(true);
+
+            const studentId = selectedStudentForEnrollment.id;
+            const assessmentId = selectedAssessmentForEnrollment;
+            const assessment = availableAssessments.find(a => a.id === assessmentId);
+
+            if (!assessment) {
+                toast({
+                    title: "Error",
+                    description: "Assessment not found",
+                    variant: "destructive"
+                });
+                return;
+            }
+
+            // 1. Create assessment access for student
+            const studentAssessmentRef = doc(
+                db,
+                "users",
+                studentId,
+                "assessmentAccess",
+                assessmentId
+            );
+
+            await setDoc(studentAssessmentRef, {
+                assessmentId: assessmentId,
+                assessmentTitle: assessment.title,
+                assessmentDescription: assessment.description,
+                accessCode: assessment.accessCode,
+                questionsCount: assessment.questions?.length || 0,
+                grantedBy: userData.uid,
+                grantedByEmail: userData.email,
+                grantedByName: userData.fullName,
+                grantedAt: serverTimestamp(),
+                expiresAt: null,
+                status: "active",
+                lastUpdated: serverTimestamp()
+            });
+
+            // 2. Update assessment document with assigned students count
+            const assessmentRef = doc(db, "assessments", assessmentId);
+            await updateDoc(assessmentRef, {
+                assignedStudents: arrayUnion(studentId),
+                lastUpdated: serverTimestamp()
+            });
+
+            toast({
+                title: "Success",
+                description: `Assessment "${assessment.title}" assigned to ${selectedStudentForEnrollment.fullName || selectedStudentForEnrollment.email}`,
+                variant: "default"
+            });
+
+            // Update local state
+            const updatedStudents = students.map(s => {
+                if (s.id === studentId) {
+                    return {
+                        ...s,
+                        assignedAssessments: [...(s.assignedAssessments || []), {
+                            id: assessmentId,
+                            assessmentTitle: assessment.title,
+                            description: assessment.description,
+                            accessCode: assessment.accessCode,
+                            grantedAt: serverTimestamp()
+                        }]
+                    };
+                }
+                return s;
+            });
+
+            setStudents(updatedStudents);
+
+            // Update selected student if modal is open
+            if (selectedStudent && selectedStudent.id === studentId) {
+                setSelectedStudent(prev => ({
+                    ...prev,
+                    assignedAssessments: [...(prev.assignedAssessments || []), {
+                        id: assessmentId,
+                        assessmentTitle: assessment.title,
+                        description: assessment.description,
+                        accessCode: assessment.accessCode,
+                        grantedAt: serverTimestamp()
+                    }]
+                }));
+            }
+
+            // Update student assessments in modal
+            const updatedAssessments = await fetchStudentAssignedAssessments(studentId);
+            setStudentAssessments(updatedAssessments);
+
+            // Clear selection
+            setSelectedAssessmentForEnrollment("");
+
+        } catch (error) {
+            console.error("Error assigning assessment:", error);
+            let errorMessage = "Failed to assign assessment";
+            if (error.code === 'permission-denied') {
+                errorMessage = "Permission denied. You don't have access to assign this assessment.";
+            }
+            toast({
+                title: "Error",
+                description: errorMessage,
+                variant: "destructive"
+            });
+        } finally {
+            setAssigningAssessments(false);
         }
     };
 
@@ -708,6 +1025,7 @@ export default function PartnerInstructorStudents() {
     // Refresh button
     const handleRefresh = () => {
         fetchData();
+        fetchAvailableAssessments();
     };
 
     if (loading) {
@@ -829,10 +1147,10 @@ export default function PartnerInstructorStudents() {
                     <CardContent className="pt-6">
                         <div className="flex items-center justify-between">
                             <div>
-                                <p className="text-sm font-medium text-muted-foreground">Showing</p>
-                                <p className="text-2xl font-bold">{filteredStudents.length}</p>
+                                <p className="text-sm font-medium text-muted-foreground">Available Assessments</p>
+                                <p className="text-2xl font-bold">{availableAssessments.length}</p>
                             </div>
-                            <Eye className="h-8 w-8 text-purple-600" />
+                            <FileText className="h-8 w-8 text-purple-600" />
                         </div>
                     </CardContent>
                 </Card>
@@ -863,15 +1181,16 @@ export default function PartnerInstructorStudents() {
                                     Enroll Student
                                 </Button>
                             </DialogTrigger>
-                            <DialogContent>
+                            <DialogContent className="max-w-md">
                                 <DialogHeader>
-                                    <DialogTitle>Enroll Student in Course</DialogTitle>
+                                    <DialogTitle>Manage Student</DialogTitle>
                                     <DialogDescription>
-                                        Select a student and course to enroll them.
+                                        Enroll student in course or assign assessments
                                     </DialogDescription>
                                 </DialogHeader>
 
                                 <div className="space-y-4 py-4">
+                                    {/* Student Selection */}
                                     <div className="space-y-2">
                                         <label className="text-sm font-medium">Student</label>
                                         <Select
@@ -899,8 +1218,9 @@ export default function PartnerInstructorStudents() {
                                         </Select>
                                     </div>
 
+                                    {/* Course Selection Section */}
                                     <div className="space-y-2">
-                                        <label className="text-sm font-medium">Course</label>
+                                        <label className="text-sm font-medium">Enroll in Course</label>
                                         <Select
                                             value={selectedCourseForEnrollment}
                                             onValueChange={setSelectedCourseForEnrollment}
@@ -924,40 +1244,145 @@ export default function PartnerInstructorStudents() {
                                         )}
                                     </div>
 
-                                    {selectedStudentForEnrollment && selectedCourseForEnrollment && (
-                                        <div className="p-4 bg-muted/50 rounded-lg">
-                                            <p className="text-sm font-medium">Enrollment Summary:</p>
+                                    {/* Assessment Assignment Section */}
+                                    {selectedStudentForEnrollment && (
+                                        <div className="space-y-4 pt-4 border-t">
+                                            <div className="flex items-center justify-between">
+                                                <label className="text-sm font-medium">Assign Assessments</label>
+                                                <span className="text-xs text-muted-foreground">
+                                                    {availableAssessments.length} available
+                                                </span>
+                                            </div>
+
+                                            {availableAssessments.length > 0 ? (
+                                                <div className="space-y-3">
+                                                    <Select
+                                                        value={selectedAssessmentForEnrollment}
+                                                        onValueChange={setSelectedAssessmentForEnrollment}
+                                                    >
+                                                        <SelectTrigger>
+                                                            <SelectValue placeholder="Select an assessment" />
+                                                        </SelectTrigger>
+                                                        <SelectContent>
+                                                            {availableAssessments.map(assessment => (
+                                                                <SelectItem key={assessment.id} value={assessment.id}>
+                                                                    <div className="flex items-center justify-between w-full">
+                                                                        <span className="truncate">{assessment.title}</span>
+                                                                        <Badge variant="outline" className="ml-2 text-xs">
+                                                                            {assessment.questions?.length || 0} Q
+                                                                        </Badge>
+                                                                    </div>
+                                                                </SelectItem>
+                                                            ))}
+                                                        </SelectContent>
+                                                    </Select>
+
+                                                    {selectedAssessmentForEnrollment && (
+                                                        <div className="space-y-2">
+                                                            <Button
+                                                                onClick={handleAssignAssessment}
+                                                                disabled={assigningAssessments}
+                                                                variant="secondary"
+                                                                className="w-full"
+                                                                size="sm"
+                                                            >
+                                                                {assigningAssessments ? (
+                                                                    <>
+                                                                        <Loader2 className="h-3 w-3 mr-2 animate-spin" />
+                                                                        Assigning...
+                                                                    </>
+                                                                ) : (
+                                                                    <>
+                                                                        <FileText className="h-3 w-3 mr-2" />
+                                                                        Assign Assessment
+                                                                    </>
+                                                                )}
+                                                            </Button>
+                                                            <p className="text-xs text-muted-foreground">
+                                                                Assign this assessment to the student
+                                                            </p>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            ) : (
+                                                <div className="text-center p-3 border border-dashed rounded-md">
+                                                    <p className="text-sm text-muted-foreground">
+                                                        No assessments available
+                                                    </p>
+                                                    <p className="text-xs text-muted-foreground mt-1">
+                                                        Create assessments first in the Assessments section
+                                                    </p>
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+
+                                    {/* Summary */}
+                                    {selectedStudentForEnrollment && (
+                                        <div className="p-3 bg-muted/50 rounded-lg space-y-1">
+                                            <p className="text-xs font-medium">Summary:</p>
                                             <p className="text-sm">
                                                 <span className="font-medium">Student:</span> {selectedStudentForEnrollment.fullName || selectedStudentForEnrollment.email}
                                             </p>
-                                            <p className="text-sm">
-                                                <span className="font-medium">Course:</span> {availableCoursesForEnrollment.find(c => c.id === selectedCourseForEnrollment)?.title}
-                                            </p>
+                                            {selectedCourseForEnrollment && (
+                                                <p className="text-sm">
+                                                    <span className="font-medium">Course:</span> {availableCoursesForEnrollment.find(c => c.id === selectedCourseForEnrollment)?.title}
+                                                </p>
+                                            )}
+                                            {selectedAssessmentForEnrollment && (
+                                                <p className="text-sm">
+                                                    <span className="font-medium">Assessment:</span> {availableAssessments.find(a => a.id === selectedAssessmentForEnrollment)?.title}
+                                                </p>
+                                            )}
                                         </div>
                                     )}
                                 </div>
 
-                                <DialogFooter>
+                                <DialogFooter className="flex flex-col sm:flex-row gap-2">
                                     <Button
                                         variant="outline"
                                         onClick={() => setEnrollmentDialogOpen(false)}
-                                        disabled={enrolling}
+                                        disabled={enrolling || assigningAssessments}
+                                        className="sm:flex-1"
                                     >
                                         Cancel
                                     </Button>
-                                    <Button
-                                        onClick={handleEnrollStudent}
-                                        disabled={!selectedStudentForEnrollment || !selectedCourseForEnrollment || enrolling}
-                                    >
-                                        {enrolling ? (
-                                            <>
-                                                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                                                Enrolling...
-                                            </>
-                                        ) : (
-                                            "Enroll Student"
+
+                                    {/* Two action buttons: Enroll and Assign Assessment */}
+                                    <div className="flex gap-2 w-full sm:w-auto">
+                                        {selectedAssessmentForEnrollment && (
+                                            <Button
+                                                onClick={handleAssignAssessment}
+                                                disabled={!selectedAssessmentForEnrollment || assigningAssessments || enrolling}
+                                                variant="secondary"
+                                                className="flex-1"
+                                            >
+                                                {assigningAssessments ? (
+                                                    <>
+                                                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                                                        Assigning...
+                                                    </>
+                                                ) : (
+                                                    "Assign Assessment"
+                                                )}
+                                            </Button>
                                         )}
-                                    </Button>
+
+                                        <Button
+                                            onClick={handleEnrollStudent}
+                                            disabled={!selectedStudentForEnrollment || !selectedCourseForEnrollment || enrolling}
+                                            className="flex-1"
+                                        >
+                                            {enrolling ? (
+                                                <>
+                                                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                                                    Enrolling...
+                                                </>
+                                            ) : (
+                                                "Enroll in Course"
+                                            )}
+                                        </Button>
+                                    </div>
                                 </DialogFooter>
                             </DialogContent>
                         </Dialog>
@@ -986,7 +1411,7 @@ export default function PartnerInstructorStudents() {
                                     <TableHead>Email</TableHead>
                                     <TableHead>College</TableHead>
                                     <TableHead>Course Progress</TableHead>
-                                    <TableHead className="w-[100px]">Actions</TableHead>
+                                    <TableHead className="w-[120px]">Actions</TableHead>
                                 </TableRow>
                             </TableHeader>
                             <TableBody>
@@ -1311,7 +1736,61 @@ export default function PartnerInstructorStudents() {
                                     )}
                                 </div>
 
-                                {/* 4. Action Footer */}
+                                {/* 4. Assigned Assessments Section */}
+                                <div>
+                                    <h4 className="text-lg font-bold flex items-center gap-2 mb-4">
+                                        <FileText className="h-5 w-5 text-purple-600" />
+                                        Assigned Assessments ({studentAssessments.length})
+                                    </h4>
+
+                                    {studentAssessments.length > 0 ? (
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                            {studentAssessments.map(assessment => (
+                                                <div key={assessment.id} className="p-4 border rounded-lg bg-purple-50 hover:bg-purple-100 transition-colors">
+                                                    <div className="flex justify-between items-start mb-2">
+                                                        <h5 className="font-bold text-purple-900 truncate">{assessment.assessmentTitle || assessment.title}</h5>
+                                                        <Badge variant="outline" className="bg-white text-xs">
+                                                            {assessment.questionsCount || 0} Questions
+                                                        </Badge>
+                                                    </div>
+                                                    <p className="text-sm text-purple-700 mb-3 line-clamp-2">
+                                                        {assessment.assessmentDescription || assessment.description || "No description available"}
+                                                    </p>
+                                                    <div className="flex justify-between items-center text-sm">
+                                                        <span className="text-purple-600 font-medium">
+                                                            Access Code: <code className="bg-white px-1 py-0.5 rounded">{assessment.accessCode || "N/A"}</code>
+                                                        </span>
+                                                        <span className="text-purple-600 text-xs">
+                                                            Assigned: {assessment.grantedAt ? new Date(assessment.grantedAt.seconds * 1000).toLocaleDateString() : "N/A"}
+                                                        </span>
+                                                    </div>
+                                                    <div className="mt-2 text-xs text-purple-500">
+                                                        By: {assessment.grantedByName || assessment.grantedByEmail || "Partner Instructor"}
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    ) : (
+                                        <div className="text-center p-6 border-2 border-dashed border-purple-200 rounded-lg bg-purple-50">
+                                            <FileText className="h-8 w-8 text-purple-400 mx-auto mb-2" />
+                                            <p className="text-purple-600">No assessments assigned</p>
+                                            <p className="text-sm text-purple-400 mt-1">
+                                                Assign assessments from the enrollment dialog
+                                            </p>
+                                            <Button
+                                                onClick={() => handleOpenEnrollmentDialog(selectedStudent)}
+                                                variant="outline"
+                                                size="sm"
+                                                className="mt-3 gap-2"
+                                            >
+                                                <FileText className="h-3 w-3" />
+                                                Assign Assessments
+                                            </Button>
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* 5. Action Footer */}
                                 <div className="mt-8 flex flex-col sm:flex-row justify-between gap-3 border-t pt-6">
                                     <div className="flex gap-2">
                                         <Button
@@ -1321,6 +1800,14 @@ export default function PartnerInstructorStudents() {
                                         >
                                             <PlusCircle className="h-4 w-4" />
                                             Enroll in Another Course
+                                        </Button>
+                                        <Button
+                                            variant="outline"
+                                            onClick={() => handleOpenEnrollmentDialog(selectedStudent)}
+                                            className="gap-2"
+                                        >
+                                            <FileText className="h-4 w-4" />
+                                            Assign Assessment
                                         </Button>
                                     </div>
                                     <div className="flex gap-2">

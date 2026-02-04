@@ -16,6 +16,10 @@ import PartnerInstructorStudents from "./PartnerInstructorStudents";
 import PartnerInstructorCourses from "./PartnerInstructorCourses"; // Updated import
 import PartnerCoursePreview from "./PartnerCoursePreview"; // Add this import
 import { PERMISSIONS } from "../../lib/rbac";
+import InstructorAssessments from "../instructor/assessments/InstructorAssessments";
+import AssessmentEditor from "../instructor/assessments/AssessmentEditor";
+import AssessmentResults from "../instructor/assessments/AssessmentResults";
+import AssessmentEnrollmentMenu from "./AssessmentEnrollmentMenu";
 
 export default function PartnerInstructorDashboard() {
     const { userData } = useAuth();
@@ -367,6 +371,15 @@ export default function PartnerInstructorDashboard() {
             <Route path="courses" element={<PartnerInstructorCourses />} />
             {/* <Route path="courses/preview/:courseId" element={<PartnerCoursePreview />} /> */}
             <Route path="courses/preview/:courseId" element={<PartnerCoursePreview />} />
+
+            {/* Assessment Routes */}
+            <Route path="assessments" element={<InstructorAssessments />} />
+            <Route path="assessments/new" element={<AssessmentEditor />} />
+            <Route path="assessments/edit/:id" element={<AssessmentEditor />} />
+            <Route path="assessments/results/:id" element={<AssessmentResults />} />
+
+            <Route path="assessments/enroll" element={<AssessmentEnrollmentMenu />} />
+
 
             {/* Catch-all route*/}
             <Route path="*" element={<Navigate to="/partner-instructor" replace />} />

@@ -467,7 +467,7 @@ export default function RichTextEditor({
                 },
                 codeBlock: {
                     HTMLAttributes: {
-                        class: 'bg-gray-100 dark:bg-gray-800 rounded-lg p-4 font-mono text-sm my-4',
+                        class: 'bg-gray-100 rounded-lg p-4 font-mono text-sm my-4',
                     },
                 },
                 horizontalRule: {
@@ -633,7 +633,7 @@ export default function RichTextEditor({
             Link.configure({
                 openOnClick: false,
                 HTMLAttributes: {
-                    class: 'text-blue-600 dark:text-blue-400 underline hover:text-blue-800 dark:hover:text-blue-300 transition-colors duration-200',
+                    class: 'text-blue-600 underline hover:text-blue-800 transition-colors duration-200',
                     target: '_blank',
                     rel: 'noopener noreferrer',
                 },
@@ -670,7 +670,7 @@ export default function RichTextEditor({
         editorProps: {
             attributes: {
                 // FIXED: Remove line breaks and extra spaces from class string
-                class: `min-h-[400px] p-6 focus:outline-none prose prose-lg max-w-none ${wordWrap ? 'whitespace-pre-wrap break-words' : 'whitespace-nowrap'} prose-headings:font-bold prose-headings:text-gray-900 dark:prose-headings:text-gray-100 prose-p:text-gray-700 dark:prose-p:text-gray-300 prose-strong:text-gray-900 dark:prose-strong:text-gray-100 prose-em:text-gray-700 dark:prose-em:text-gray-300 prose-blockquote:text-gray-600 dark:prose-blockquote:text-gray-400 prose-ul:text-gray-700 dark:prose-ul:text-gray-300 prose-ol:text-gray-700 dark:prose-ol:text-gray-300 prose-code:text-gray-800 dark:prose-code:text-gray-200 prose-pre:bg-gray-100 dark:prose-pre:bg-gray-800 prose-a:text-blue-600 dark:prose-a:text-blue-400 prose-hr:border-gray-300 dark:prose-hr:border-gray-700 prose-img:rounded-lg prose-img:shadow-md prose-table:divide-gray-200 dark:prose-table:divide-gray-700 prose-th:text-gray-700 dark:prose-th:text-gray-300 prose-td:text-gray-600 dark:prose-td:text-gray-400`,
+                class: `min-h-[400px] p-6 focus:outline-none prose prose-lg max-w-none ${wordWrap ? 'whitespace-pre-wrap break-words' : 'whitespace-nowrap'} prose-headings:font-bold prose-headings:text-gray-900 prose-p:text-gray-700 prose-strong:text-gray-900 prose-em:text-gray-700 prose-blockquote:text-gray-600 prose-ul:text-gray-700 prose-ol:text-gray-700 prose-code:text-gray-800 prose-pre:bg-gray-100 prose-a:text-blue-600 prose-hr:border-gray-300 prose-img:rounded-lg prose-img:shadow-md prose-table:divide-gray-200 prose-th:text-gray-700 prose-td:text-gray-600`,
             },
         },
     });
@@ -1066,10 +1066,6 @@ export default function RichTextEditor({
                 color: #374151;
             }
             
-            .tiptap.dark {
-                color: #d1d5db;
-            }
-            
             .tiptap span[style*="font-size"] {
                 display: inline;
             }
@@ -1240,11 +1236,6 @@ export default function RichTextEditor({
                 color: #111827;
             }
             
-            .tiptap.dark h1, .tiptap.dark h2, .tiptap.dark h3, 
-            .tiptap.dark h4, .tiptap.dark h5, .tiptap.dark h6 {
-                color: #f9fafb;
-            }
-            
             .tiptap h1 { 
                 font-size: 2.25rem;
                 letter-spacing: -0.025em;
@@ -1394,7 +1385,7 @@ export default function RichTextEditor({
                 exit={{ opacity: 0, scale: 0.95 }}
                 className={`fixed inset-0 z-[60] bg-background ${fullscreen ? '' : 'flex items-center justify-center p-4'}`}
             >
-                <div className={`${fullscreen ? 'h-full' : 'w-full max-w-6xl max-h-[90vh]'} flex flex-col bg-card rounded-lg shadow-2xl overflow-hidden border border-gray-200 dark:border-gray-800`}>
+                <div className={`${fullscreen ? 'h-full' : 'w-full max-w-6xl max-h-[90vh]'} flex flex-col bg-card rounded-lg shadow-2xl overflow-hidden border border-gray-200`}>
                     <Toolbar
                         editor={editor}
                         fullscreen={fullscreen}
@@ -1424,7 +1415,7 @@ export default function RichTextEditor({
                         onResetImageSize={resetImageSize}
                     />
 
-                    <div className="flex-1 overflow-auto border-t border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900">
+                    <div className="flex-1 overflow-auto border-t border-gray-200 bg-white">
                         <EditorContent editor={editor} />
                     </div>
 
@@ -1518,7 +1509,7 @@ function Toolbar({
     onResetImageSize
 }) {
     return (
-        <div className="flex items-center justify-between p-4 bg-gradient-to-r from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800 border-b border-gray-200 dark:border-gray-800">
+        <div className="flex items-center justify-between p-4 bg-gradient-to-r from-gray-50 to-gray-100 border-b border-gray-200">
             <div className="flex items-center gap-2 flex-wrap">
                 <Button
                     type="button"
@@ -1526,7 +1517,7 @@ function Toolbar({
                     size="sm"
                     onClick={() => editor.chain().focus().undo().run()}
                     disabled={!editor.can().undo()}
-                    className="hover:bg-gray-200 dark:hover:bg-gray-700"
+                    className="hover:bg-gray-200"
                 >
                     <Undo2 size={16} />
                 </Button>
@@ -1536,25 +1527,25 @@ function Toolbar({
                     size="sm"
                     onClick={() => editor.chain().focus().redo().run()}
                     disabled={!editor.can().redo()}
-                    className="hover:bg-gray-200 dark:hover:bg-gray-700"
+                    className="hover:bg-gray-200"
                 >
                     <Redo2 size={16} />
                 </Button>
 
-                <div className="w-px h-6 bg-gray-300 dark:bg-gray-700 mx-1" />
+                <div className="w-px h-6 bg-gray-300 mx-1" />
 
                 <Button
                     type="button"
                     variant="ghost"
                     size="sm"
                     onClick={onToggleWordWrap}
-                    className={`hover:bg-gray-200 dark:hover:bg-gray-700 ${wordWrap ? 'bg-blue-100 dark:bg-blue-900 text-blue-600 dark:text-blue-400' : ''}`}
+                    className={`hover:bg-gray-200 ${wordWrap ? 'bg-blue-100 text-blue-600' : ''}`}
                     title={wordWrap ? "Disable Word Wrap" : "Enable Word Wrap"}
                 >
                     <WrapText size={16} />
                 </Button>
 
-                <div className="w-px h-6 bg-gray-300 dark:bg-gray-700 mx-1" />
+                <div className="w-px h-6 bg-gray-300 mx-1" />
 
                 <Popover>
                     <PopoverTrigger asChild>
@@ -1562,13 +1553,13 @@ function Toolbar({
                             type="button"
                             variant="ghost"
                             size="sm"
-                            className="gap-1 hover:bg-gray-200 dark:hover:bg-gray-700"
+                            className="gap-1 hover:bg-gray-200"
                         >
                             <TypeIcon size={16} />
                             <span className="text-xs font-medium">{fontSize.replace('px', '')}</span>
                         </Button>
                     </PopoverTrigger>
-                    <PopoverContent className="w-56 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
+                    <PopoverContent className="w-56 bg-white border border-gray-200">
                         <div className="grid gap-3">
                             <div className="grid grid-cols-2 items-center gap-3">
                                 <Label htmlFor="font-size" className="text-sm font-medium">Font Size</Label>
@@ -1592,7 +1583,7 @@ function Toolbar({
                                         variant="outline"
                                         size="sm"
                                         onClick={() => onApplyFontSize(`${size}px`)}
-                                        className={`text-xs ${fontSize === `${size}px` ? 'bg-blue-100 dark:bg-blue-900 border-blue-300 dark:border-blue-700 text-blue-600 dark:text-blue-400' : 'border-gray-300 dark:border-gray-600'}`}
+                                        className={`text-xs ${fontSize === `${size}px` ? 'bg-blue-100 border-blue-300 text-blue-600' : 'border-gray-300'}`}
                                     >
                                         {size}
                                     </Button>
@@ -1606,7 +1597,7 @@ function Toolbar({
                                         variant="outline"
                                         size="sm"
                                         onClick={() => onApplyFontSize(`${size}px`)}
-                                        className={`text-xs ${fontSize === `${size}px` ? 'bg-blue-100 dark:bg-blue-900 border-blue-300 dark:border-blue-700 text-blue-600 dark:text-blue-400' : 'border-gray-300 dark:border-gray-600'}`}
+                                        className={`text-xs ${fontSize === `${size}px` ? 'bg-blue-100 border-blue-300 text-blue-600' : 'border-gray-300'}`}
                                     >
                                         {size}
                                     </Button>
@@ -1618,7 +1609,7 @@ function Toolbar({
                                     variant="outline"
                                     size="sm"
                                     onClick={() => onApplyFontSize('16px')}
-                                    className="flex-1 text-xs border-gray-300 dark:border-gray-600"
+                                    className="flex-1 text-xs border-gray-300"
                                 >
                                     Reset Default
                                 </Button>
@@ -1627,7 +1618,7 @@ function Toolbar({
                                     variant="outline"
                                     size="sm"
                                     onClick={onClearFontSize}
-                                    className="flex-1 text-xs border-gray-300 dark:border-gray-600"
+                                    className="flex-1 text-xs border-gray-300"
                                 >
                                     Clear
                                 </Button>
@@ -1646,32 +1637,32 @@ function Toolbar({
                         }
                     }}
                 >
-                    <SelectTrigger className="w-28 h-8 text-sm bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600">
+                    <SelectTrigger className="w-28 h-8 text-sm bg-white border-gray-300">
                         <SelectValue placeholder="Normal" />
                     </SelectTrigger>
-                    <SelectContent className="bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700">
-                        <SelectItem value="p" className="text-sm hover:bg-gray-100 dark:hover:bg-gray-700">Normal</SelectItem>
-                        <SelectItem value="1" className="text-sm hover:bg-gray-100 dark:hover:bg-gray-700">
+                    <SelectContent className="bg-white border-gray-200">
+                        <SelectItem value="p" className="text-sm hover:bg-gray-100">Normal</SelectItem>
+                        <SelectItem value="1" className="text-sm hover:bg-gray-100">
                             <div className="flex items-center gap-2">
                                 <Heading1 size={14} />
                                 <span className="font-bold">Heading 1</span>
                             </div>
                         </SelectItem>
-                        <SelectItem value="2" className="text-sm hover:bg-gray-100 dark:hover:bg-gray-700">
+                        <SelectItem value="2" className="text-sm hover:bg-gray-100">
                             <div className="flex items-center gap-2">
                                 <Heading2 size={14} />
                                 <span className="font-bold">Heading 2</span>
                             </div>
                         </SelectItem>
-                        <SelectItem value="3" className="text-sm hover:bg-gray-100 dark:hover:bg-gray-700">
+                        <SelectItem value="3" className="text-sm hover:bg-gray-100">
                             <div className="flex items-center gap-2">
                                 <Heading3 size={14} />
                                 <span className="font-bold">Heading 3</span>
                             </div>
                         </SelectItem>
-                        <SelectItem value="4" className="text-sm hover:bg-gray-100 dark:hover:bg-gray-700">Heading 4</SelectItem>
-                        <SelectItem value="5" className="text-sm hover:bg-gray-100 dark:hover:bg-gray-700">Heading 5</SelectItem>
-                        <SelectItem value="6" className="text-sm hover:bg-gray-100 dark:hover:bg-gray-700">Heading 6</SelectItem>
+                        <SelectItem value="4" className="text-sm hover:bg-gray-100">Heading 4</SelectItem>
+                        <SelectItem value="5" className="text-sm hover:bg-gray-100">Heading 5</SelectItem>
+                        <SelectItem value="6" className="text-sm hover:bg-gray-100">Heading 6</SelectItem>
                     </SelectContent>
                 </Select>
 
@@ -1679,26 +1670,26 @@ function Toolbar({
                     value={editor.getAttributes('textStyle')?.fontFamily || 'inherit'}
                     onValueChange={(value) => editor.chain().focus().setFontFamily(value).run()}
                 >
-                    <SelectTrigger className="w-36 h-8 text-sm bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600">
+                    <SelectTrigger className="w-36 h-8 text-sm bg-white border-gray-300">
                         <SelectValue placeholder="Font" />
                     </SelectTrigger>
-                    <SelectContent className="bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 max-h-64">
+                    <SelectContent className="bg-white border-gray-200 max-h-64">
                         {FONT_FAMILIES.map((font) => (
-                            <SelectItem key={font.value} value={font.value} className="text-sm hover:bg-gray-100 dark:hover:bg-gray-700">
+                            <SelectItem key={font.value} value={font.value} className="text-sm hover:bg-gray-100">
                                 <span style={{ fontFamily: font.value }}>{font.name}</span>
                             </SelectItem>
                         ))}
                     </SelectContent>
                 </Select>
 
-                <div className="w-px h-6 bg-gray-300 dark:bg-gray-700 mx-1" />
+                <div className="w-px h-6 bg-gray-300 mx-1" />
 
                 <Button
                     type="button"
                     variant="ghost"
                     size="sm"
                     onClick={() => editor.chain().focus().toggleBold().run()}
-                    className={`hover:bg-gray-200 dark:hover:bg-gray-700 ${editor.isActive('bold') ? 'bg-blue-100 dark:bg-blue-900 text-blue-600 dark:text-blue-400' : ''}`}
+                    className={`hover:bg-gray-200 ${editor.isActive('bold') ? 'bg-blue-100 text-blue-600' : ''}`}
                 >
                     <Bold size={16} />
                 </Button>
@@ -1707,7 +1698,7 @@ function Toolbar({
                     variant="ghost"
                     size="sm"
                     onClick={() => editor.chain().focus().toggleItalic().run()}
-                    className={`hover:bg-gray-200 dark:hover:bg-gray-700 ${editor.isActive('italic') ? 'bg-blue-100 dark:bg-blue-900 text-blue-600 dark:text-blue-400' : ''}`}
+                    className={`hover:bg-gray-200 ${editor.isActive('italic') ? 'bg-blue-100 text-blue-600' : ''}`}
                 >
                     <Italic size={16} />
                 </Button>
@@ -1716,21 +1707,21 @@ function Toolbar({
                     variant="ghost"
                     size="sm"
                     onClick={() => editor.chain().focus().toggleUnderline().run()}
-                    className={`hover:bg-gray-200 dark:hover:bg-gray-700 ${editor.isActive('underline') ? 'bg-blue-100 dark:bg-blue-900 text-blue-600 dark:text-blue-400' : ''}`}
+                    className={`hover:bg-gray-200 ${editor.isActive('underline') ? 'bg-blue-100 text-blue-600' : ''}`}
                 >
                     <UnderlineIcon size={16} />
                 </Button>
 
                 <ColorPicker editor={editor} />
 
-                <div className="w-px h-6 bg-gray-300 dark:bg-gray-700 mx-1" />
+                <div className="w-px h-6 bg-gray-300 mx-1" />
 
                 <Button
                     type="button"
                     variant="ghost"
                     size="sm"
                     onClick={() => editor.chain().focus().setTextAlign('left').run()}
-                    className={`hover:bg-gray-200 dark:hover:bg-gray-700 ${editor.isActive({ textAlign: 'left' }) ? 'bg-blue-100 dark:bg-blue-900 text-blue-600 dark:text-blue-400' : ''}`}
+                    className={`hover:bg-gray-200 ${editor.isActive({ textAlign: 'left' }) ? 'bg-blue-100 text-blue-600' : ''}`}
                 >
                     <AlignLeft size={16} />
                 </Button>
@@ -1739,7 +1730,7 @@ function Toolbar({
                     variant="ghost"
                     size="sm"
                     onClick={() => editor.chain().focus().setTextAlign('center').run()}
-                    className={`hover:bg-gray-200 dark:hover:bg-gray-700 ${editor.isActive({ textAlign: 'center' }) ? 'bg-blue-100 dark:bg-blue-900 text-blue-600 dark:text-blue-400' : ''}`}
+                    className={`hover:bg-gray-200 ${editor.isActive({ textAlign: 'center' }) ? 'bg-blue-100 text-blue-600' : ''}`}
                 >
                     <AlignCenter size={16} />
                 </Button>
@@ -1748,7 +1739,7 @@ function Toolbar({
                     variant="ghost"
                     size="sm"
                     onClick={() => editor.chain().focus().setTextAlign('right').run()}
-                    className={`hover:bg-gray-200 dark:hover:bg-gray-700 ${editor.isActive({ textAlign: 'right' }) ? 'bg-blue-100 dark:bg-blue-900 text-blue-600 dark:text-blue-400' : ''}`}
+                    className={`hover:bg-gray-200 ${editor.isActive({ textAlign: 'right' }) ? 'bg-blue-100 text-blue-600' : ''}`}
                 >
                     <AlignRight size={16} />
                 </Button>
@@ -1757,19 +1748,19 @@ function Toolbar({
                     variant="ghost"
                     size="sm"
                     onClick={() => editor.chain().focus().setTextAlign('justify').run()}
-                    className={`hover:bg-gray-200 dark:hover:bg-gray-700 ${editor.isActive({ textAlign: 'justify' }) ? 'bg-blue-100 dark:bg-blue-900 text-blue-600 dark:text-blue-400' : ''}`}
+                    className={`hover:bg-gray-200 ${editor.isActive({ textAlign: 'justify' }) ? 'bg-blue-100 text-blue-600' : ''}`}
                 >
                     <AlignJustify size={16} />
                 </Button>
 
-                <div className="w-px h-6 bg-gray-300 dark:bg-gray-700 mx-1" />
+                <div className="w-px h-6 bg-gray-300 mx-1" />
 
                 <Button
                     type="button"
                     variant="ghost"
                     size="sm"
                     onClick={() => editor.chain().focus().toggleBulletList().run()}
-                    className={`hover:bg-gray-200 dark:hover:bg-gray-700 ${editor.isActive('bulletList') ? 'bg-blue-100 dark:bg-blue-900 text-blue-600 dark:text-blue-400' : ''}`}
+                    className={`hover:bg-gray-200 ${editor.isActive('bulletList') ? 'bg-blue-100 text-blue-600' : ''}`}
                 >
                     <List size={16} />
                 </Button>
@@ -1778,19 +1769,19 @@ function Toolbar({
                     variant="ghost"
                     size="sm"
                     onClick={() => editor.chain().focus().toggleOrderedList().run()}
-                    className={`hover:bg-gray-200 dark:hover:bg-gray-700 ${editor.isActive('orderedList') ? 'bg-blue-100 dark:bg-blue-900 text-blue-600 dark:text-blue-400' : ''}`}
+                    className={`hover:bg-gray-200 ${editor.isActive('orderedList') ? 'bg-blue-100 text-blue-600' : ''}`}
                 >
                     <ListOrdered size={16} />
                 </Button>
 
-                <div className="w-px h-6 bg-gray-300 dark:bg-gray-700 mx-1" />
+                <div className="w-px h-6 bg-gray-300 mx-1" />
 
                 <Button
                     type="button"
                     variant="ghost"
                     size="sm"
                     onClick={() => editor.chain().focus().setHorizontalRule().run()}
-                    className="hover:bg-gray-200 dark:hover:bg-gray-700"
+                    className="hover:bg-gray-200"
                 >
                     <MinusSquare size={16} />
                 </Button>
@@ -1799,7 +1790,7 @@ function Toolbar({
                     variant="ghost"
                     size="sm"
                     onClick={onShowLinkModal}
-                    className={`hover:bg-gray-200 dark:hover:bg-gray-700 ${editor.isActive('link') ? 'bg-blue-100 dark:bg-blue-900 text-blue-600 dark:text-blue-400' : ''}`}
+                    className={`hover:bg-gray-200 ${editor.isActive('link') ? 'bg-blue-100 text-blue-600' : ''}`}
                 >
                     <LinkIcon size={16} />
                 </Button>
@@ -1808,7 +1799,7 @@ function Toolbar({
                     variant="ghost"
                     size="sm"
                     onClick={onShowImageUpload}
-                    className="hover:bg-gray-200 dark:hover:bg-gray-700"
+                    className="hover:bg-gray-200"
                 >
                     <ImageIcon size={16} />
                 </Button>
@@ -1817,21 +1808,21 @@ function Toolbar({
                     variant="ghost"
                     size="sm"
                     onClick={onShowTableModal}
-                    className={`hover:bg-gray-200 dark:hover:bg-gray-700 ${editor.isActive('table') ? 'bg-blue-100 dark:bg-blue-900 text-blue-600 dark:text-blue-400' : ''}`}
+                    className={`hover:bg-gray-200 ${editor.isActive('table') ? 'bg-blue-100 text-blue-600' : ''}`}
                 >
                     <TableIcon size={16} />
                 </Button>
 
                 {selectedImageNode && (
                     <>
-                        <div className="w-px h-6 bg-gray-300 dark:bg-gray-700 mx-1" />
+                        <div className="w-px h-6 bg-gray-300 mx-1" />
                         <Button
                             type="button"
                             variant="ghost"
                             size="sm"
                             onClick={onShowImageSettings}
                             title="Image Settings"
-                            className="hover:bg-gray-200 dark:hover:bg-gray-700"
+                            className="hover:bg-gray-200"
                         >
                             <Settings size={16} />
                         </Button>
@@ -1841,7 +1832,7 @@ function Toolbar({
                             size="sm"
                             onClick={onCenterImage}
                             title="Center Image"
-                            className="hover:bg-gray-200 dark:hover:bg-gray-700"
+                            className="hover:bg-gray-200"
                         >
                             <AlignCenter size={16} />
                         </Button>
@@ -1851,7 +1842,7 @@ function Toolbar({
                             size="sm"
                             onClick={onAlignImageLeft}
                             title="Align Image Left"
-                            className="hover:bg-gray-200 dark:hover:bg-gray-700"
+                            className="hover:bg-gray-200"
                         >
                             <AlignLeft size={16} />
                         </Button>
@@ -1861,7 +1852,7 @@ function Toolbar({
                             size="sm"
                             onClick={onAlignImageRight}
                             title="Align Image Right"
-                            className="hover:bg-gray-200 dark:hover:bg-gray-700"
+                            className="hover:bg-gray-200"
                         >
                             <AlignRight size={16} />
                         </Button>
@@ -1871,7 +1862,7 @@ function Toolbar({
                             size="sm"
                             onClick={() => onResizeImage("50%")}
                             title="Resize to 50%"
-                            className="hover:bg-gray-200 dark:hover:bg-gray-700"
+                            className="hover:bg-gray-200"
                         >
                             <ZoomOut size={16} />
                         </Button>
@@ -1881,7 +1872,7 @@ function Toolbar({
                             size="sm"
                             onClick={() => onResizeImage("100%")}
                             title="Resize to 100%"
-                            className="hover:bg-gray-200 dark:hover:bg-gray-700"
+                            className="hover:bg-gray-200"
                         >
                             <ZoomIn size={16} />
                         </Button>
@@ -1891,7 +1882,7 @@ function Toolbar({
                             size="sm"
                             onClick={onResetImageSize}
                             title="Reset Image Size"
-                            className="hover:bg-gray-200 dark:hover:bg-gray-700"
+                            className="hover:bg-gray-200"
                         >
                             <RotateCw size={16} />
                         </Button>
@@ -1903,7 +1894,7 @@ function Toolbar({
                     variant="ghost"
                     size="sm"
                     onClick={onClearContent}
-                    className="text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20"
+                    className="text-red-600 hover:bg-red-50"
                 >
                     <Trash2 size={16} />
                 </Button>
@@ -1915,7 +1906,7 @@ function Toolbar({
                     variant="ghost"
                     size="sm"
                     onClick={onToggleFullscreen}
-                    className="hover:bg-gray-200 dark:hover:bg-gray-700"
+                    className="hover:bg-gray-200"
                 >
                     {fullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
                 </Button>
@@ -1924,7 +1915,7 @@ function Toolbar({
                     variant="outline"
                     size="sm"
                     onClick={onClose}
-                    className="border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-800"
+                    className="border-gray-300 hover:bg-gray-100"
                 >
                     Cancel
                 </Button>
@@ -1932,7 +1923,7 @@ function Toolbar({
                     type="button"
                     size="sm"
                     onClick={onSave}
-                    className="bg-blue-600 hover:bg-blue-700 dark:bg-blue-700 dark:hover:bg-blue-600 text-white"
+                    className="bg-blue-600 hover:bg-blue-700 text-white"
                 >
                     <Save size={16} className="mr-2" />
                     Save
@@ -1955,7 +1946,7 @@ function ColorPicker({ editor }) {
                 size="sm"
                 onClick={() => setShowPicker(!showPicker)}
                 style={{ color: currentColor }}
-                className="hover:bg-gray-200 dark:hover:bg-gray-700"
+                className="hover:bg-gray-200"
             >
                 <Palette size={16} />
             </Button>
@@ -1966,13 +1957,13 @@ function ColorPicker({ editor }) {
                         initial={{ opacity: 0, y: -10 }}
                         animate={{ opacity: 1, y: 0 }}
                         exit={{ opacity: 0, y: -10 }}
-                        className="absolute top-full left-0 mt-1 p-3 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-xl z-10 w-56"
+                        className="absolute top-full left-0 mt-1 p-3 bg-white border border-gray-200 rounded-lg shadow-xl z-10 w-56"
                     >
                         <div className="grid grid-cols-6 gap-2 mb-3">
                             {COLORS.map((color) => (
                                 <button
                                     key={color}
-                                    className="w-7 h-7 rounded border border-gray-300 dark:border-gray-600 hover:scale-110 transition-transform"
+                                    className="w-7 h-7 rounded border border-gray-300 hover:scale-110 transition-transform"
                                     style={{ backgroundColor: color }}
                                     onClick={() => {
                                         editor.chain().focus().setColor(color).run();
@@ -1991,7 +1982,7 @@ function ColorPicker({ editor }) {
                                 className="w-full h-8"
                             />
                         </div>
-                        <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-700">
+                        <div className="mt-3 pt-3 border-t border-gray-200">
                             <Button
                                 type="button"
                                 variant="outline"
@@ -2049,28 +2040,28 @@ function ImageUploadModal({
 
     return (
         <Dialog open={show} onOpenChange={onClose}>
-            <DialogContent className="sm:max-w-md bg-white dark:bg-gray-900">
+            <DialogContent className="sm:max-w-md bg-white">
                 <DialogHeader>
                     <DialogTitle className="text-lg font-semibold">Insert Image</DialogTitle>
-                    <DialogDescription className="text-gray-600 dark:text-gray-400">
+                    <DialogDescription className="text-gray-600">
                         Upload to Cloudinary or insert from URL
                     </DialogDescription>
                 </DialogHeader>
 
                 <Tabs defaultValue="upload" className="w-full">
-                    <TabsList className="grid w-full grid-cols-2 bg-gray-100 dark:bg-gray-800">
-                        <TabsTrigger value="upload" className="data-[state=active]:bg-white dark:data-[state=active]:bg-gray-900">Upload</TabsTrigger>
-                        <TabsTrigger value="url" className="data-[state=active]:bg-white dark:data-[state=active]:bg-gray-900">From URL</TabsTrigger>
+                    <TabsList className="grid w-full grid-cols-2 bg-gray-100">
+                        <TabsTrigger value="upload" className="data-[state=active]:bg-white">Upload</TabsTrigger>
+                        <TabsTrigger value="url" className="data-[state=active]:bg-white">From URL</TabsTrigger>
                     </TabsList>
 
                     <TabsContent value="upload" className="space-y-4 mt-4">
                         <div
-                            className="border-2 border-dashed border-gray-300 dark:border-gray-700 rounded-xl p-8 text-center hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+                            className="border-2 border-dashed border-gray-300 rounded-xl p-8 text-center hover:bg-gray-50 transition-colors"
                             onDrop={handleDrop}
                             onDragOver={handleDragOver}
                         >
-                            <Upload className="mx-auto h-14 w-14 text-gray-400 dark:text-gray-500 mb-3" />
-                            <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+                            <Upload className="mx-auto h-14 w-14 text-gray-400 mb-3" />
+                            <p className="text-sm text-gray-600 mb-4">
                                 Drag & drop or click to upload
                             </p>
                             <Input
@@ -2085,7 +2076,7 @@ function ImageUploadModal({
                                 variant="outline"
                                 onClick={() => fileInputRef.current?.click()}
                                 disabled={uploading}
-                                className="border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-800"
+                                className="border-gray-300 hover:bg-gray-100"
                             >
                                 {uploading ? (
                                     <>
@@ -2094,10 +2085,10 @@ function ImageUploadModal({
                                     </>
                                 ) : "Select Image"}
                             </Button>
-                            <p className="text-xs text-gray-500 dark:text-gray-500 mt-3">
+                            <p className="text-xs text-gray-500 mt-3">
                                 Images will be uploaded to Cloudinary
                             </p>
-                            <p className="text-xs text-gray-500 dark:text-gray-500">
+                            <p className="text-xs text-gray-500">
                                 Supported formats: JPG, PNG, GIF, WebP, SVG
                             </p>
                         </div>
@@ -2111,9 +2102,9 @@ function ImageUploadModal({
                                 placeholder="https://res.cloudinary.com/... or any image URL"
                                 value={imageData.url}
                                 onChange={(e) => onImageDataChange({ ...imageData, url: e.target.value })}
-                                className="border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800"
+                                className="border-gray-300 bg-white"
                             />
-                            <p className="text-xs text-gray-500 dark:text-gray-500">
+                            <p className="text-xs text-gray-500">
                                 Enter a Cloudinary URL or any public image URL
                             </p>
                         </div>
@@ -2125,9 +2116,9 @@ function ImageUploadModal({
                                 placeholder="Description for accessibility"
                                 value={imageData.alt}
                                 onChange={(e) => onImageDataChange({ ...imageData, alt: e.target.value })}
-                                className="border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800"
+                                className="border-gray-300 bg-white"
                             />
-                            <p className="text-xs text-gray-500 dark:text-gray-500">
+                            <p className="text-xs text-gray-500">
                                 Important for screen readers and SEO
                             </p>
                         </div>
@@ -2139,7 +2130,7 @@ function ImageUploadModal({
                                 placeholder="Image title"
                                 value={imageData.title}
                                 onChange={(e) => onImageDataChange({ ...imageData, title: e.target.value })}
-                                className="border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800"
+                                className="border-gray-300 bg-white"
                             />
                         </div>
 
@@ -2152,7 +2143,7 @@ function ImageUploadModal({
                                         placeholder="e.g., 300px or 50%"
                                         value={imageData.width}
                                         onChange={(e) => onImageDataChange({ ...imageData, width: e.target.value })}
-                                        className="border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800"
+                                        className="border-gray-300 bg-white"
                                     />
                                 </div>
                             </div>
@@ -2165,7 +2156,7 @@ function ImageUploadModal({
                                         placeholder="e.g., 200px or auto"
                                         value={imageData.height}
                                         onChange={(e) => onImageDataChange({ ...imageData, height: e.target.value })}
-                                        className="border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800"
+                                        className="border-gray-300 bg-white"
                                     />
                                 </div>
                             </div>
@@ -2177,20 +2168,20 @@ function ImageUploadModal({
                                 value={imageData.align}
                                 onValueChange={(value) => onImageDataChange({ ...imageData, align: value })}
                             >
-                                <SelectTrigger className="border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800">
+                                <SelectTrigger className="border-gray-300 bg-white">
                                     <SelectValue placeholder="Alignment" />
                                 </SelectTrigger>
-                                <SelectContent className="bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700">
-                                    <SelectItem value="left" className="hover:bg-gray-100 dark:hover:bg-gray-700">Left</SelectItem>
-                                    <SelectItem value="center" className="hover:bg-gray-100 dark:hover:bg-gray-700">Center</SelectItem>
-                                    <SelectItem value="right" className="hover:bg-gray-100 dark:hover:bg-gray-700">Right</SelectItem>
+                                <SelectContent className="bg-white border-gray-200">
+                                    <SelectItem value="left" className="hover:bg-gray-100">Left</SelectItem>
+                                    <SelectItem value="center" className="hover:bg-gray-100">Center</SelectItem>
+                                    <SelectItem value="right" className="hover:bg-gray-100">Right</SelectItem>
                                 </SelectContent>
                             </Select>
                         </div>
 
                         {imageData.url && (
-                            <div className="mt-4 p-3 border border-gray-200 dark:border-gray-700 rounded-lg">
-                                <div className="text-sm font-medium mb-2 text-gray-700 dark:text-gray-300">Preview:</div>
+                            <div className="mt-4 p-3 border border-gray-200 rounded-lg">
+                                <div className="text-sm font-medium mb-2 text-gray-700">Preview:</div>
                                 <img
                                     src={imageData.url}
                                     alt="Preview"
@@ -2219,7 +2210,7 @@ function ImageUploadModal({
                         variant="outline"
                         onClick={onClose}
                         disabled={uploading}
-                        className="border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-800"
+                        className="border-gray-300 hover:bg-gray-100"
                     >
                         Cancel
                     </Button>
@@ -2227,7 +2218,7 @@ function ImageUploadModal({
                         type="button"
                         onClick={onInsert}
                         disabled={!imageData.url || uploading}
-                        className="bg-blue-600 hover:bg-blue-700 dark:bg-blue-700 dark:hover:bg-blue-600 text-white"
+                        className="bg-blue-600 hover:bg-blue-700 text-white"
                     >
                         Insert Image
                     </Button>
@@ -2262,10 +2253,10 @@ function ImageSettingsModal({
 
     return (
         <Dialog open={show} onOpenChange={onClose} className="max-h-[50vh] overflow-y-auto">
-            <DialogContent className="sm:max-w-md bg-white dark:bg-gray-900">
+            <DialogContent className="sm:max-w-md bg-white">
                 <DialogHeader>
                     <DialogTitle className="text-lg font-semibold">Image Settings</DialogTitle>
-                    <DialogDescription className="text-gray-600 dark:text-gray-400">
+                    <DialogDescription className="text-gray-600">
                         Adjust the properties of the selected image
                     </DialogDescription>
                 </DialogHeader>
@@ -2279,7 +2270,7 @@ function ImageSettingsModal({
                                 variant={imageData.align === 'left' ? 'default' : 'outline'}
                                 size="sm"
                                 onClick={() => onImageDataChange({ align: 'left' })}
-                                className="flex-1 border-gray-300 dark:border-gray-600"
+                                className="flex-1 border-gray-300"
                             >
                                 <AlignLeft size={16} className="mr-2" />
                                 Left
@@ -2289,7 +2280,7 @@ function ImageSettingsModal({
                                 variant={imageData.align === 'center' ? 'default' : 'outline'}
                                 size="sm"
                                 onClick={() => onImageDataChange({ align: 'center' })}
-                                className="flex-1 border-gray-300 dark:border-gray-600"
+                                className="flex-1 border-gray-300"
                             >
                                 <AlignCenter size={16} className="mr-2" />
                                 Center
@@ -2299,7 +2290,7 @@ function ImageSettingsModal({
                                 variant={imageData.align === 'right' ? 'default' : 'outline'}
                                 size="sm"
                                 onClick={() => onImageDataChange({ align: 'right' })}
-                                className="flex-1 border-gray-300 dark:border-gray-600"
+                                className="flex-1 border-gray-300"
                             >
                                 <AlignRight size={16} className="mr-2" />
                                 Right
@@ -2317,7 +2308,7 @@ function ImageSettingsModal({
                                     variant="outline"
                                     size="sm"
                                     onClick={() => onImageDataChange({ width: size.width, height: size.height })}
-                                    className={`border-gray-300 dark:border-gray-600 ${imageData.width === size.width && imageData.height === size.height ? 'bg-blue-100 dark:bg-blue-900 border-blue-300 dark:border-blue-700 text-blue-600 dark:text-blue-400' : ''}`}
+                                    className={`border-gray-300 ${imageData.width === size.width && imageData.height === size.height ? 'bg-blue-100 border-blue-300 text-blue-600' : ''}`}
                                 >
                                     {size.label}
                                 </Button>
@@ -2331,7 +2322,7 @@ function ImageSettingsModal({
                                     variant="outline"
                                     size="sm"
                                     onClick={() => onImageDataChange({ width: size.width, height: size.height })}
-                                    className={`border-gray-300 dark:border-gray-600 ${imageData.width === size.width && imageData.height === size.height ? 'bg-blue-100 dark:bg-blue-900 border-blue-300 dark:border-blue-700 text-blue-600 dark:text-blue-400' : ''}`}
+                                    className={`border-gray-300 ${imageData.width === size.width && imageData.height === size.height ? 'bg-blue-100 border-blue-300 text-blue-600' : ''}`}
                                 >
                                     {size.label}
                                 </Button>
@@ -2348,7 +2339,7 @@ function ImageSettingsModal({
                                     placeholder="e.g., 300px or 50%"
                                     value={imageData.width}
                                     onChange={(e) => onImageDataChange({ width: e.target.value })}
-                                    className="border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800"
+                                    className="border-gray-300 bg-white"
                                 />
                             </div>
                         </div>
@@ -2361,7 +2352,7 @@ function ImageSettingsModal({
                                     placeholder="e.g., 200px or auto"
                                     value={imageData.height}
                                     onChange={(e) => onImageDataChange({ height: e.target.value })}
-                                    className="border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800"
+                                    className="border-gray-300 bg-white"
                                 />
                             </div>
                         </div>
@@ -2375,7 +2366,7 @@ function ImageSettingsModal({
                                 variant="outline"
                                 size="sm"
                                 onClick={onResetImageSize}
-                                className="flex-1 border-gray-300 dark:border-gray-600"
+                                className="flex-1 border-gray-300"
                             >
                                 <RotateCw size={16} className="mr-2" />
                                 Reset All
@@ -2385,7 +2376,7 @@ function ImageSettingsModal({
                                 variant="outline"
                                 size="sm"
                                 onClick={() => onImageDataChange({ width: "100%", height: "auto", maxHeight: "none" })}
-                                className="flex-1 border-gray-300 dark:border-gray-600"
+                                className="flex-1 border-gray-300"
                             >
                                 <Maximize size={16} className="mr-2" />
                                 Full Width
@@ -2393,16 +2384,16 @@ function ImageSettingsModal({
                         </div>
                     </div>
 
-                    <div className="p-4 border border-gray-200 dark:border-gray-700 rounded-lg bg-gray-50 dark:bg-gray-800">
-                        <div className="text-sm font-medium mb-2 text-gray-700 dark:text-gray-300">Preview</div>
-                        <div className="text-xs text-gray-500 dark:text-gray-500 mb-2">
+                    <div className="p-4 border border-gray-200 rounded-lg bg-gray-50">
+                        <div className="text-sm font-medium mb-2 text-gray-700">Preview</div>
+                        <div className="text-xs text-gray-500 mb-2">
                             Image will appear as: {getSizeText(imageData.width)} × {getSizeText(imageData.height)}
                             {(imageData.maxHeight && imageData.maxHeight !== 'none') && ` (max height: ${imageData.maxHeight})`}
                         </div>
-                        <div className="border border-gray-300 dark:border-gray-600 rounded p-4 bg-white dark:bg-gray-900 min-h-[120px] flex items-center justify-center">
+                        <div className="border border-gray-300 rounded p-4 bg-white min-h-[120px] flex items-center justify-center">
                             <div className={`inline-block ${imageData.align === 'left' ? 'float-left mr-4' : imageData.align === 'right' ? 'float-right ml-4' : 'mx-auto'}`}>
                                 <div
-                                    className="bg-blue-100 dark:bg-blue-900/30 rounded border-2 border-dashed border-blue-300 dark:border-blue-700 flex items-center justify-center overflow-hidden"
+                                    className="bg-blue-100 rounded border-2 border-dashed border-blue-300 flex items-center justify-center overflow-hidden"
                                     style={{
                                         width: '200px',
                                         height: '150px',
@@ -2410,7 +2401,7 @@ function ImageSettingsModal({
                                         maxWidth: '100%'
                                     }}
                                 >
-                                    <div className="text-xs text-blue-600 dark:text-blue-400 text-center p-2">
+                                    <div className="text-xs text-blue-600 text-center p-2">
                                         <div>Image Preview</div>
                                         <div className="text-[10px] mt-1">
                                             {getSizeText(imageData.width)} × {getSizeText(imageData.height)}
@@ -2432,14 +2423,14 @@ function ImageSettingsModal({
                         type="button"
                         variant="outline"
                         onClick={onClose}
-                        className="border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-800"
+                        className="border-gray-300 hover:bg-gray-100"
                     >
                         Cancel
                     </Button>
                     <Button
                         type="button"
                         onClick={onClose}
-                        className="bg-blue-600 hover:bg-blue-700 dark:bg-blue-700 dark:hover:bg-blue-600 text-white"
+                        className="bg-blue-600 hover:bg-blue-700 text-white"
                     >
                         Apply Changes
                     </Button>
@@ -2455,10 +2446,10 @@ function LinkModal({ show, onClose, link, onLinkChange, onInsert, editor }) {
 
     return (
         <Dialog open={show} onOpenChange={onClose}>
-            <DialogContent className="sm:max-w-md bg-white dark:bg-gray-900">
+            <DialogContent className="sm:max-w-md bg-white">
                 <DialogHeader>
                     <DialogTitle className="text-lg font-semibold">Insert Link</DialogTitle>
-                    <DialogDescription className="text-gray-600 dark:text-gray-400">
+                    <DialogDescription className="text-gray-600">
                         Add a link to your content
                     </DialogDescription>
                 </DialogHeader>
@@ -2471,9 +2462,9 @@ function LinkModal({ show, onClose, link, onLinkChange, onInsert, editor }) {
                             placeholder="Click here"
                             value={link.text}
                             onChange={(e) => onLinkChange({ ...link, text: e.target.value })}
-                            className="border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800"
+                            className="border-gray-300 bg-white"
                         />
-                        <p className="text-xs text-gray-500 dark:text-gray-500">
+                        <p className="text-xs text-gray-500">
                             Text that will be displayed as the link
                         </p>
                     </div>
@@ -2485,9 +2476,9 @@ function LinkModal({ show, onClose, link, onLinkChange, onInsert, editor }) {
                             placeholder="https://example.com"
                             value={link.url}
                             onChange={(e) => onLinkChange({ ...link, url: e.target.value })}
-                            className="border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800"
+                            className="border-gray-300 bg-white"
                         />
-                        <p className="text-xs text-gray-500 dark:text-gray-500">
+                        <p className="text-xs text-gray-500">
                             The web address the link will point to
                         </p>
                     </div>
@@ -2496,7 +2487,7 @@ function LinkModal({ show, onClose, link, onLinkChange, onInsert, editor }) {
                         <Label className="flex items-center gap-2 text-sm font-medium">
                             <input
                                 type="checkbox"
-                                className="rounded border-gray-300 dark:border-gray-600"
+                                className="rounded border-gray-300"
                                 defaultChecked
                             />
                             Open in new tab
@@ -2509,7 +2500,7 @@ function LinkModal({ show, onClose, link, onLinkChange, onInsert, editor }) {
                         type="button"
                         variant="outline"
                         onClick={onClose}
-                        className="border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-800"
+                        className="border-gray-300 hover:bg-gray-100"
                     >
                         Cancel
                     </Button>
@@ -2517,7 +2508,7 @@ function LinkModal({ show, onClose, link, onLinkChange, onInsert, editor }) {
                         type="button"
                         onClick={onInsert}
                         disabled={!link.url}
-                        className="bg-blue-600 hover:bg-blue-700 dark:bg-blue-700 dark:hover:bg-blue-600 text-white"
+                        className="bg-blue-600 hover:bg-blue-700 text-white"
                     >
                         Insert Link
                     </Button>
@@ -2538,7 +2529,7 @@ function NavigationBar({
     isLast
 }) {
     return (
-        <div className="flex items-center justify-between p-4 border-t border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900/50">
+        <div className="flex items-center justify-between p-4 border-t border-gray-200 bg-gray-50">
             <div className="flex-1">
                 {previous && (
                     <Button
@@ -2546,18 +2537,18 @@ function NavigationBar({
                         variant="ghost"
                         onClick={onPrevious}
                         disabled={isFirst}
-                        className="gap-2 hover:bg-gray-100 dark:hover:bg-gray-800"
+                        className="gap-2 hover:bg-gray-100"
                     >
                         <ArrowLeft size={16} />
                         <div className="text-left">
-                            <div className="text-xs text-gray-500 dark:text-gray-400">Previous</div>
-                            <div className="text-sm font-medium text-gray-700 dark:text-gray-300">{previous.title}</div>
+                            <div className="text-xs text-gray-500">Previous</div>
+                            <div className="text-sm font-medium text-gray-700">{previous.title}</div>
                         </div>
                     </Button>
                 )}
             </div>
 
-            <div className="px-4 text-sm font-medium text-gray-700 dark:text-gray-300">
+            <div className="px-4 text-sm font-medium text-gray-700">
                 {current?.title || "Current Content"}
             </div>
 
@@ -2568,11 +2559,11 @@ function NavigationBar({
                         variant="ghost"
                         onClick={onNext}
                         disabled={isLast}
-                        className="gap-2 hover:bg-gray-100 dark:hover:bg-gray-800"
+                        className="gap-2 hover:bg-gray-100"
                     >
                         <div className="text-right">
-                            <div className="text-xs text-gray-500 dark:text-gray-400">Next</div>
-                            <div className="text-sm font-medium text-gray-700 dark:text-gray-300">{next.title}</div>
+                            <div className="text-xs text-gray-500">Next</div>
+                            <div className="text-sm font-medium text-gray-700">{next.title}</div>
                         </div>
                         <ArrowRight size={16} />
                     </Button>

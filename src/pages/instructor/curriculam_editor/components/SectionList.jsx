@@ -18,7 +18,8 @@ import {
     updateSection,
     updateSubSection,
     deleteSubSection,
-    getSubSection
+    getSubSection,
+    addSection
 } from "../../../../services/sectionService";
 import ModuleList from "./ModuleList";
 import SubSectionList from "./SubSectionList";
@@ -925,33 +926,60 @@ export default function SectionList({ sections, courseId, onEditModule, onRefres
     };
 
     const handleAddFirstSection = async () => {
-        if (onAddSection) {
-            onAddSection();
-        } else {
+        try {
             const result = await showModal({
                 title: "Add First Section",
                 type: "form",
-                fields: [{
-                    name: "title",
-                    label: "Section Title",
-                    type: "text",
-                    required: true,
-                    placeholder: "Enter section title"
-                }],
+                fields: [
+                    {
+                        name: "title",
+                        label: "Section Title",
+                        type: "text",
+                        required: true,
+                        placeholder: "Enter section title"
+                    },
+                    {
+                        name: "description",
+                        label: "Description (Optional)",
+                        type: "textarea",
+                        required: false,
+                        placeholder: "Enter description"
+                    }
+                ],
                 submitText: "Add Section",
-                cancelText: "Cancel"
+                cancelText: "Cancel",
             });
 
             if (result) {
+                // Use the service function
+                await addSection(courseId, {
+                    title: result.title,
+                    description: result.description || "",
+                    objectives: [],
+                    modules: [],
+                    subSections: [],
+                    order: sections.length + 1,
+                    estimatedTime: 60,
+                    isPublished: false
+                });
+
                 toast({
-                    title: "Info",
-                    description: "Add section functionality will be implemented",
+                    title: "Success",
+                    description: "Section added successfully",
                     variant: "default",
                 });
+
+                if (onRefreshSections) onRefreshSections();
             }
+        } catch (error) {
+            console.error("Error adding section:", error);
+            toast({
+                title: "Error",
+                description: error.message || "Failed to add section",
+                variant: "destructive",
+            });
         }
     };
-
     // Loading state
     if (isLoading) {
         return (

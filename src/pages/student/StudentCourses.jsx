@@ -9,7 +9,8 @@ import {
     doc,
     arrayUnion,
     getDoc,
-    documentId
+    documentId,
+    orderBy
 } from "firebase/firestore";
 import { useAuth } from "../../contexts/AuthContext";
 import { Link, useNavigate } from "react-router-dom";
@@ -130,7 +131,8 @@ export default function StudentCourses() {
                     const isBanned = bannedFrom.includes(courseId);
                     const progress = progressMap[courseId] || {
                         completedModules: [],
-                        quizAttempts: {}
+                        quizAttempts: {},
+                        started: false
                     };
 
                     // For banned courses, we don't need to fetch sections
@@ -148,145 +150,204 @@ export default function StudentCourses() {
                             quizAttempted: false,
                             completedCount: progress.completedModules?.length || 0,
                             progressPercent: 0,
-                            completed: false
+                            completed: false,
+                            started: progress.started || false
                         };
                     }
 
-                    // Fetch course sections to calculate total modules (for active courses only)
-                    const sectionsQuery = query(
-                        collection(db, `courses/${courseId}/sections`),
-                        where("status", "==", "published")
-                    );
-                    const sectionsSnap = await getDocs(sectionsQuery);
-
                     let totalModules = 0;
-                    const sectionsData = [];
+                    let allModules = [];
 
-                    for (const sectionDoc of sectionsSnap.docs) {
-                        const sectionData = sectionDoc.data();
-                        const modules = sectionData.modules || [];
-                        const subSections = sectionData.subSections || [];
+                    try {
+                        // Fetch sections from the subcollection (matching CoursePlayer)
+                        const sectionsRef = collection(db, `courses/${courseId}/sections`);
+                        const sectionsQuery = query(sectionsRef, orderBy("order", "asc"));
+                        const sectionsSnap = await getDocs(sectionsQuery);
 
-                        // Count modules in section
-                        const sectionModules = modules.length;
+                        const sectionsData = [];
 
-                        // Count modules in sub-sections
-                        let subSectionModules = 0;
-                        subSections.forEach(subSection => {
-                            subSectionModules += (subSection.modules || []).length;
+                        sectionsSnap.forEach(sectionDoc => {
+                            const sectionData = sectionDoc.data();
+                            const sectionId = sectionDoc.id;
+
+                            // Debug log
+                            console.log(`Section ${sectionId}:`, {
+                                title: sectionData.title,
+                                directModules: sectionData.modules?.length || 0,
+                                subSections: sectionData.subSections?.length || 0
+                            });
+
+                            // Count direct modules in section
+                            const directModules = Array.isArray(sectionData.modules) ? sectionData.modules : [];
+                            totalModules += directModules.length;
+
+                            // Count modules in sub-sections
+                            let subSectionModulesCount = 0;
+                            let subSectionModules = [];
+                            const subSections = Array.isArray(sectionData.subSections) ? sectionData.subSections : [];
+
+                            subSections.forEach(subSection => {
+                                // Debug subSection
+                                console.log(`  Sub-section ${subSection.title}:`, {
+                                    modules: subSection.modules?.length || 0
+                                });
+
+                                const subSectionModulesList = Array.isArray(subSection.modules) ? subSection.modules : [];
+                                subSectionModulesCount += subSectionModulesList.length;
+                                subSectionModules = subSectionModules.concat(subSectionModulesList);
+                            });
+
+                            totalModules += subSectionModulesCount;
+
+                            // Combine all modules for this section
+                            const sectionAllModules = [...directModules, ...subSectionModules];
+
+                            // Process each module with additional metadata
+                            const processedModules = sectionAllModules.map(module => {
+                                // Check if module is from sub-section
+                                const fromSubSection = subSectionModules.includes(module);
+                                let subSection = null;
+                                if (fromSubSection) {
+                                    subSection = subSections.find(ss =>
+                                        Array.isArray(ss.modules) && ss.modules.includes(module)
+                                    );
+                                }
+
+                                // Create path based on module location
+                                let path;
+                                if (fromSubSection && subSection) {
+                                    path = `/student/course/${courseId}/section/${sectionId}/sub-section/${subSection.id}/module/${module.id}`;
+                                } else {
+                                    path = `/student/course/${courseId}/section/${sectionId}/module/${module.id}`;
+                                }
+
+                                // Ensure module has an ID
+                                const moduleId = module.id || `${sectionId}-${module.title?.replace(/\s+/g, '-').toLowerCase()}`;
+
+                                return {
+                                    ...module,
+                                    id: moduleId,
+                                    sectionId: sectionId,
+                                    isSubSection: fromSubSection,
+                                    subSectionId: subSection?.id || null,
+                                    path: path,
+                                    order: typeof module.order === 'number' ? module.order : 999
+                                };
+                            });
+
+                            allModules = allModules.concat(processedModules);
+
+                            sectionsData.push({
+                                id: sectionId,
+                                ...sectionData,
+                                order: sectionData.order || 0,
+                                processedModules: processedModules
+                            });
                         });
 
-                        totalModules += sectionModules + subSectionModules;
-                        sectionsData.push({
-                            id: sectionDoc.id,
-                            ...sectionData,
-                            order: sectionData.order || 0
+                        console.log(`Course ${courseData.title}: Total modules = ${totalModules}, All modules array length = ${allModules.length}`);
+
+                        // Sort sections by order
+                        sectionsData.sort((a, b) => (a.order || 0) - (b.order || 0));
+
+                        // Sort all modules by section order and then module order
+                        allModules.sort((a, b) => {
+                            // Find sections for each module
+                            const sectionA = sectionsData.find(s => s.id === a.sectionId);
+                            const sectionB = sectionsData.find(s => s.id === b.sectionId);
+
+                            // Sort by section order first
+                            if (sectionA && sectionB && sectionA.order !== sectionB.order) {
+                                return (sectionA.order || 0) - (sectionB.order || 0);
+                            }
+
+                            // Then sort by module order
+                            return (a.order || 0) - (b.order || 0);
                         });
+
+                    } catch (error) {
+                        console.error(`Error fetching sections for course ${courseId}:`, error);
                     }
 
-                    // Sort sections by order
-                    sectionsData.sort((a, b) => (a.order || 0) - (b.order || 0));
+                    // Check if course is started
+                    const isStarted = progress.started ||
+                        (progress.completedModules && progress.completedModules.length > 0) ||
+                        progress.lastAccessed;
+
+                    // Mark as started if not already marked
+                    if (!progress.started && isStarted) {
+                        try {
+                            const progressRef = doc(db, "users", user.uid, "courseProgress", courseId);
+                            await updateDoc(progressRef, {
+                                started: true,
+                                lastAccessed: new Date().toISOString()
+                            }, { merge: true });
+                            progress.started = true;
+                        } catch (error) {
+                            console.error("Error marking course as started:", error);
+                        }
+                    }
 
                     // Find first incomplete module
-                    let firstIncompleteSection = null;
-                    let firstIncompleteModule = null;
+                    let nextModule = null;
                     let nextModulePath = null;
 
-                    // Find first incomplete module
-                    for (const section of sectionsData) {
-                        // Check direct modules
-                        for (const module of section.modules || []) {
-                            const moduleId = module.id || `${section.id}-${module.title}`;
+                    if (allModules.length > 0) {
+                        for (const module of allModules) {
+                            const moduleId = module.id;
                             if (!progress.completedModules?.includes(moduleId)) {
-                                firstIncompleteSection = section;
-                                firstIncompleteModule = module;
-                                nextModulePath = `/student/course/${courseId}/section/${section.id}/module/${moduleId}`;
+                                nextModule = module;
+                                nextModulePath = module.path;
                                 break;
                             }
                         }
-                        if (firstIncompleteModule) break;
 
-                        // Check sub-section modules
-                        for (const subSection of section.subSections || []) {
-                            for (const module of subSection.modules || []) {
-                                const moduleId = module.id || `${section.id}-${subSection.id}-${module.title}`;
-                                if (!progress.completedModules?.includes(moduleId)) {
-                                    firstIncompleteSection = section;
-                                    firstIncompleteModule = module;
-                                    nextModulePath = `/student/course/${courseId}/section/${section.id}/sub-section/${subSection.id}/module/${moduleId}`;
-                                    break;
-                                }
-                            }
-                            if (firstIncompleteModule) break;
-                        }
-                        if (firstIncompleteModule) break;
-                    }
-
-                    // If all modules are completed, go to first section's first module
-                    if (!firstIncompleteModule && sectionsData.length > 0) {
-                        const firstSection = sectionsData[0];
-                        if (firstSection.modules?.length > 0) {
-                            firstIncompleteModule = firstSection.modules[0];
-                            nextModulePath = `/student/course/${courseId}/section/${firstSection.id}/module/${firstIncompleteModule.id || firstSection.id}`;
+                        // If all modules completed or none found, go to first module
+                        if (!nextModule) {
+                            nextModule = allModules[0];
+                            nextModulePath = allModules[0].path;
                         }
                     }
 
                     // Check for quizzes
                     let nextQuiz = null;
                     let quizAttempted = false;
+                    let hasQuizzes = false;
 
                     if (progress.quizAttempts) {
-                        // Find first un-attempted quiz
-                        for (const section of sectionsData) {
-                            // Check direct modules for quizzes
-                            for (const module of section.modules || []) {
-                                if (module.type?.toLowerCase() === 'quiz' || module.type?.toLowerCase() === 'assessment') {
-                                    const quizId = module.id || `${section.id}-${module.title}`;
-                                    const attempt = progress.quizAttempts[quizId];
-                                    if (!attempt || !attempt.completed) {
-                                        nextQuiz = {
-                                            id: quizId,
-                                            title: module.title,
-                                            sectionTitle: section.title,
-                                            path: `/student/course/${courseId}/section/${section.id}/quiz/${quizId}`,
-                                            isAvailable: true
-                                        };
-                                        break;
-                                    } else {
-                                        quizAttempted = true;
-                                    }
-                                }
-                            }
-                            if (nextQuiz) break;
+                        for (const module of allModules) {
+                            const moduleType = module.type?.toLowerCase();
+                            if (moduleType === 'quiz' || moduleType === 'assessment') {
+                                hasQuizzes = true;
+                                const quizId = module.id;
+                                const attempt = progress.quizAttempts[quizId];
 
-                            // Check sub-section modules for quizzes
-                            for (const subSection of section.subSections || []) {
-                                for (const module of subSection.modules || []) {
-                                    if (module.type?.toLowerCase() === 'quiz' || module.type?.toLowerCase() === 'assessment') {
-                                        const quizId = module.id || `${section.id}-${subSection.id}-${module.title}`;
-                                        const attempt = progress.quizAttempts[quizId];
-                                        if (!attempt || !attempt.completed) {
-                                            nextQuiz = {
-                                                id: quizId,
-                                                title: module.title,
-                                                sectionTitle: `${section.title} > ${subSection.title}`,
-                                                path: `/student/course/${courseId}/section/${section.id}/sub-section/${subSection.id}/quiz/${quizId}`,
-                                                isAvailable: true
-                                            };
-                                            break;
-                                        } else {
-                                            quizAttempted = true;
-                                        }
-                                    }
+                                if (!nextQuiz && (!attempt || !attempt.completed)) {
+                                    nextQuiz = {
+                                        id: quizId,
+                                        title: module.title,
+                                        sectionTitle: "Quiz",
+                                        path: module.path.replace('/module/', '/quiz/'),
+                                        isAvailable: true
+                                    };
                                 }
-                                if (nextQuiz) break;
+
+                                if (attempt?.completed) {
+                                    quizAttempted = true;
+                                }
                             }
-                            if (nextQuiz) break;
                         }
                     }
 
-                    const progressPercent = totalModules > 0 ? Math.round(((progress.completedModules?.length || 0) / totalModules) * 100) : 0;
-                    const completed = progressPercent === 100;
+                    const completedCount = progress.completedModules?.length || 0;
+                    const progressPercent = totalModules > 0 ? Math.round((completedCount / totalModules) * 100) : 0;
+                    const completed = progressPercent === 100 && totalModules > 0;
+
+                    console.log(`Final stats for ${courseData.title}:`);
+                    console.log(`- Total modules: ${totalModules}`);
+                    console.log(`- Completed modules: ${completedCount}`);
+                    console.log(`- Progress: ${progressPercent}%`);
+                    console.log(`- All modules found:`, allModules.map(m => ({ title: m.title, id: m.id })));
 
                     return {
                         id: courseId,
@@ -296,10 +357,12 @@ export default function StudentCourses() {
                         progress,
                         nextModulePath,
                         nextQuiz,
-                        quizAttempted,
-                        completedCount: progress.completedModules?.length || 0,
+                        quizAttempted: hasQuizzes && quizAttempted && !nextQuiz,
+                        completedCount,
                         progressPercent,
-                        completed
+                        completed,
+                        started: progress.started || false,
+                        lastAccessed: progress.lastAccessed
                     };
                 }));
 
@@ -310,8 +373,10 @@ export default function StudentCourses() {
             const activeCourses = allCourses.filter(c => !c.isBanned);
             const bannedCoursesList = allCourses.filter(c => c.isBanned);
 
-            // Sort active courses by progress (incomplete first, then by progress percentage)
+            // Sort active courses
             activeCourses.sort((a, b) => {
+                if (!a.started && b.started) return -1;
+                if (a.started && !b.started) return 1;
                 if (a.completed && !b.completed) return 1;
                 if (!a.completed && b.completed) return -1;
                 return b.progressPercent - a.progressPercent;
@@ -342,7 +407,6 @@ export default function StudentCourses() {
             setLoading(false);
         }
     };
-
     const handleStartCourse = async (courseId) => {
         if (startingCourse === courseId) return;
 
@@ -350,11 +414,21 @@ export default function StudentCourses() {
         try {
             // Find the course
             const course = enrolledCourses.find(c => c.id === courseId);
-            if (course?.nextModulePath) {
-                navigate(course.nextModulePath);
-            } else {
-                navigate(`/student/course/${courseId}`);
+
+            // If course hasn't been started yet, mark it as started
+            if (course && !course.started) {
+                const progressRef = doc(db, "users", user.uid, "courseProgress", courseId);
+                await updateDoc(progressRef, {
+                    started: true,
+                    lastAccessed: new Date().toISOString()
+                });
             }
+
+            // if (course?.nextModulePath) {
+            //     navigate(course.nextModulePath);
+            // } else {
+            navigate(`/student/course/${courseId}`);
+            // }
         } catch (error) {
             console.error("Error starting course:", error);
         } finally {
@@ -533,136 +607,156 @@ export default function StudentCourses() {
                     </div>
                 ) : (
                     <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-                        {enrolledCourses.map((course) => (
-                            <Card key={course.id} className="group hover:shadow-lg transition-all duration-300 overflow-hidden border">
-                                {/* Course Thumbnail */}
-                                <div className="aspect-video w-full overflow-hidden bg-muted relative">
-                                    {course.thumbnailUrl ? (
-                                        <img
-                                            src={course.thumbnailUrl}
-                                            alt={course.title}
-                                            className="h-full w-full object-cover group-hover:scale-105 transition-transform duration-300"
-                                        />
-                                    ) : (
-                                        <div className="flex h-full items-center justify-center text-muted-foreground">
-                                            <BookOpen className="h-12 w-12 opacity-50" />
-                                        </div>
-                                    )}
-                                    <div className="absolute top-3 right-3">
-                                        <Badge variant={course.completed ? "success" : course.progressPercent === 0 ? "secondary" : "default"}>
-                                            {course.completed ? "Completed" : course.progressPercent === 0 ? "Not Started" : `${course.progressPercent}%`}
-                                        </Badge>
-                                    </div>
-                                    <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                                        <PlayCircle className="h-12 w-12 text-white" />
-                                    </div>
-                                </div>
+                        {enrolledCourses.map((course) => {
+                            // Determine the status badge text and variant
+                            let statusText = "";
+                            let statusVariant = "secondary";
 
-                                <CardContent className="p-6 space-y-4">
-                                    {/* Course Title & Description */}
-                                    <div>
-                                        <h3 className="font-bold text-lg line-clamp-1 mb-1">{course.title}</h3>
-                                        <p className="text-sm text-muted-foreground line-clamp-2">
-                                            {course.description}
-                                        </p>
-                                    </div>
+                            if (course.completed) {
+                                statusText = "Completed";
+                                statusVariant = "success";
+                            } else if (course.progressPercent > 0) {
+                                statusText = `${course.progressPercent}%`;
+                                statusVariant = "default";
+                            } else if (course.started) {
+                                statusText = "In Progress";
+                                statusVariant = "default";
+                            } else {
+                                statusText = "Not Started";
+                                statusVariant = "secondary";
+                            }
 
-                                    {/* Progress Bar */}
-                                    <div className="space-y-2">
-                                        <div className="flex justify-between text-sm">
-                                            <span className="font-medium">Progress</span>
-                                            <span className="text-primary font-semibold">
-                                                {course.completedCount}/{course.totalModules} modules
-                                            </span>
-                                        </div>
-                                        <Progress value={course.progressPercent} className="h-2" />
-                                    </div>
-
-                                    {/* Next Actions */}
-                                    <div className="space-y-3 pt-2">
-                                        {/* Quiz Available */}
-                                        {course.nextQuiz?.isAvailable && (
-                                            <div className="space-y-2">
-                                                <div className="flex items-center gap-2 text-sm text-purple-600 font-medium">
-                                                    <BarChart className="h-4 w-4" />
-                                                    <span>Quiz Available</span>
-                                                </div>
-                                                <div className="bg-purple-50 p-3 rounded-md border border-purple-200">
-                                                    <div className="text-sm font-medium mb-1">{course.nextQuiz.title}</div>
-                                                    <div className="text-xs text-purple-600 mb-2">
-                                                        From: {course.nextQuiz.sectionTitle}
-                                                    </div>
-                                                    <Button
-                                                        size="sm"
-                                                        className="w-full bg-purple-600 hover:bg-purple-700"
-                                                        onClick={() => handleAttemptQuiz(course.id, course.nextQuiz.path)}
-                                                    >
-                                                        Attempt Quiz
-                                                    </Button>
-                                                    <div className="text-xs text-muted-foreground mt-2 text-center">
-                                                        Can be attempted only once
-                                                    </div>
-                                                </div>
+                            return (
+                                <Card key={course.id} className="group hover:shadow-lg transition-all duration-300 overflow-hidden border">
+                                    {/* Course Thumbnail */}
+                                    <div className="aspect-video w-full overflow-hidden bg-muted relative">
+                                        {course.thumbnailUrl ? (
+                                            <img
+                                                src={course.thumbnailUrl}
+                                                alt={course.title}
+                                                className="h-full w-full object-cover group-hover:scale-105 transition-transform duration-300"
+                                            />
+                                        ) : (
+                                            <div className="flex h-full items-center justify-center text-muted-foreground">
+                                                <BookOpen className="h-12 w-12 opacity-50" />
                                             </div>
                                         )}
+                                        <div className="absolute top-3 right-3">
+                                            <Badge variant={statusVariant}>
+                                                {statusText}
+                                            </Badge>
+                                        </div>
+                                        <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                                            <PlayCircle className="h-12 w-12 text-white" />
+                                        </div>
+                                    </div>
 
-                                        {/* Quiz Already Attempted */}
-                                        {course.quizAttempted && !course.nextQuiz?.isAvailable && (
-                                            <div className="flex items-center gap-2 text-sm text-green-600 bg-green-50 p-2 rounded-md">
-                                                <CheckCircle className="h-4 w-4" />
-                                                <span>All quizzes attempted</span>
+                                    <CardContent className="p-6 space-y-4">
+                                        {/* Course Title & Description */}
+                                        <div>
+                                            <h3 className="font-bold text-lg line-clamp-1 mb-1">{course.title}</h3>
+                                            <p className="text-sm text-muted-foreground line-clamp-2">
+                                                {course.description}
+                                            </p>
+                                        </div>
+
+                                        {/* Progress Bar */}
+                                        <div className="space-y-2">
+                                            <div className="flex justify-between text-sm">
+                                                <span className="font-medium">Progress</span>
+                                                <span className="text-primary font-semibold">
+                                                    {course.completedCount}/{course.totalModules} modules
+                                                </span>
                                             </div>
-                                        )}
+                                            <Progress value={course.progressPercent} className="h-2" />
+                                        </div>
 
-                                        {/* Continue/Start Button */}
-                                        <Button
-                                            onClick={() => handleStartCourse(course.id)}
-                                            disabled={startingCourse === course.id}
-                                            className="w-full gap-2"
-                                        >
-                                            {startingCourse === course.id ? (
-                                                <>
-                                                    <Loader2 className="h-4 w-4 animate-spin" />
-                                                    Loading...
-                                                </>
-                                            ) : (
-                                                <>
-                                                    {course.completed ? (
-                                                        <>
-                                                            <CheckCircle className="h-4 w-4" />
-                                                            Review Course
-                                                        </>
-                                                    ) : course.progressPercent === 0 ? (
-                                                        <>
-                                                            <PlayCircle className="h-4 w-4" />
-                                                            Start Course
-                                                        </>
-                                                    ) : (
-                                                        <>
-                                                            <PlayCircle className="h-4 w-4" />
-                                                            Continue Learning
-                                                        </>
-                                                    )}
-                                                </>
+                                        {/* Next Actions */}
+                                        <div className="space-y-3 pt-2">
+                                            {/* Quiz Available */}
+                                            {course.nextQuiz?.isAvailable && (
+                                                <div className="space-y-2">
+                                                    <div className="flex items-center gap-2 text-sm text-purple-600 font-medium">
+                                                        <BarChart className="h-4 w-4" />
+                                                        <span>Quiz Available</span>
+                                                    </div>
+                                                    <div className="bg-purple-50 p-3 rounded-md border border-purple-200">
+                                                        <div className="text-sm font-medium mb-1">{course.nextQuiz.title}</div>
+                                                        <div className="text-xs text-purple-600 mb-2">
+                                                            From: {course.nextQuiz.sectionTitle}
+                                                        </div>
+                                                        <Button
+                                                            size="sm"
+                                                            className="w-full bg-purple-600 hover:bg-purple-700"
+                                                            onClick={() => handleAttemptQuiz(course.id, course.nextQuiz.path)}
+                                                        >
+                                                            Attempt Quiz
+                                                        </Button>
+                                                        <div className="text-xs text-muted-foreground mt-2 text-center">
+                                                            Can be attempted only once
+                                                        </div>
+                                                    </div>
+                                                </div>
                                             )}
-                                        </Button>
 
-                                        {/* Course Info */}
-                                        <div className="flex items-center justify-between text-xs text-muted-foreground pt-2 border-t">
-                                            <div className="flex items-center gap-1">
-                                                <Clock className="h-3 w-3" />
-                                                <span>{course.duration || "Self-paced"}</span>
-                                            </div>
-                                            <div className="flex items-center gap-2">
-                                                <Badge variant="outline" className="text-xs">
-                                                    {course.totalModules} modules
-                                                </Badge>
+                                            {/* Quiz Already Attempted */}
+                                            {course.quizAttempted && !course.nextQuiz?.isAvailable && (
+                                                <div className="flex items-center gap-2 text-sm text-green-600 bg-green-50 p-2 rounded-md">
+                                                    <CheckCircle className="h-4 w-4" />
+                                                    <span>All quizzes attempted</span>
+                                                </div>
+                                            )}
+
+                                            {/* Continue/Start Button */}
+                                            <Button
+                                                onClick={() => handleStartCourse(course.id)}
+                                                disabled={startingCourse === course.id}
+                                                className="w-full gap-2"
+                                            >
+                                                {startingCourse === course.id ? (
+                                                    <>
+                                                        <Loader2 className="h-4 w-4 animate-spin" />
+                                                        Loading...
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        {course.completed ? (
+                                                            <>
+                                                                <CheckCircle className="h-4 w-4" />
+                                                                Review Course
+                                                            </>
+                                                        ) : course.progressPercent === 0 && !course.started ? (
+                                                            <>
+                                                                <PlayCircle className="h-4 w-4" />
+                                                                Start Course
+                                                            </>
+                                                        ) : (
+                                                            <>
+                                                                <PlayCircle className="h-4 w-4" />
+                                                                Continue Learning
+                                                            </>
+                                                        )}
+                                                    </>
+                                                )}
+                                            </Button>
+
+                                            {/* Course Info */}
+                                            <div className="flex items-center justify-between text-xs text-muted-foreground pt-2 border-t">
+                                                <div className="flex items-center gap-1">
+                                                    <Clock className="h-3 w-3" />
+                                                    <span>{course.duration || "Self-paced"}</span>
+                                                </div>
+                                                <div className="flex items-center gap-2">
+                                                    <Badge variant="outline" className="text-xs">
+                                                        {course.totalModules} modules
+                                                    </Badge>
+                                                </div>
                                             </div>
                                         </div>
-                                    </div>
-                                </CardContent>
-                            </Card>
-                        ))}
+                                    </CardContent>
+                                </Card>
+                            );
+                        })}
                     </div>
                 )}
             </div>

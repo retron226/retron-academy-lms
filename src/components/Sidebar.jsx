@@ -60,6 +60,8 @@ export function Sidebar({ collapsed, setCollapsed }) {
                 { href: "/partner-instructor", label: "Dashboard", icon: LayoutDashboard },
                 { href: "/partner-instructor/courses", label: "My Courses", icon: BookOpen },
                 { href: "/partner-instructor/students", label: "Students", icon: Users },
+                { href: "/partner-instructor/assessments", label: "Assessments", icon: FileText },
+                { href: "/partner-instructor/announcements", label: "Announcements", icon: Megaphone },
                 { href: "/profile", label: "Profile", icon: Users },
             ],
         },

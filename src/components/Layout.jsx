@@ -9,9 +9,15 @@ export default function Layout() {
     return (
         <div className="flex h-screen overflow-hidden bg-background">
             <Sidebar collapsed={sidebarCollapsed} setCollapsed={setSidebarCollapsed} />
-            <main className="flex-1 overflow-y-auto p-8 transition-all duration-300">
-                <Outlet />
-                <div className="mt-8">
+
+            <main className="flex-1 h-full overflow-y-auto transition-all duration-300">
+                <div className="flex min-h-full flex-col p-8">
+                    {/* Page content */}
+                    <div className="flex-1">
+                        <Outlet />
+                    </div>
+
+                    {/* Footer */}
                     <Footer />
                 </div>
             </main>

@@ -1,7 +1,17 @@
 import { useState, useEffect, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { db } from "../../../lib/firebase";
-import { doc, getDoc, setDoc, addDoc, collection, updateDoc } from "firebase/firestore";
+import {
+    doc,
+    getDoc,
+    setDoc,
+    addDoc,
+    collection,
+    updateDoc,
+    query,
+    where,
+    getDocs
+} from "firebase/firestore";
 import { useAuth } from "../../../contexts/AuthContext";
 import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
@@ -20,7 +30,9 @@ import {
     Type,
     Image,
     Upload,
-    X
+    X,
+    Users,
+    BookOpen
 } from "lucide-react";
 import jsPDF from "jspdf";
 import {
@@ -38,26 +50,44 @@ const QUESTION_TYPES = {
     SINGLE_CHOICE: "single",
     MULTIPLE_CHOICE: "multiple",
     PARAGRAPH: "paragraph",
-    IMAGE_TEXT: "image_text" // New question type
+    IMAGE_TEXT: "image_text"
 };
 
 export default function AssessmentEditor() {
     const { id } = useParams();
-    const { user } = useAuth();
+    const { user, userRole } = useAuth();
     const navigate = useNavigate();
     const isNew = !id;
     const fileInputRef = useRef(null);
 
     const [loading, setLoading] = useState(false);
-    const [uploadingImages, setUploadingImages] = useState({}); // Track image uploads per question
+    const [uploadingImages, setUploadingImages] = useState({});
+    const [isPartnerInstructor, setIsPartnerInstructor] = useState(false);
+    const [partnerCourses, setPartnerCourses] = useState([]);
+    const [fetchingCourses, setFetchingCourses] = useState(false);
     const [assessment, setAssessment] = useState({
         title: "",
         description: "",
         accessCode: Math.random().toString(36).substring(2, 8).toUpperCase(),
         instructorId: user?.uid,
-        questions: [], // { id, text, type, options: [], correctAnswers: [], correctAnswer (for single), imageUrl }
+        instructorName: user?.displayName || user?.email,
+        questions: [],
         createdAt: new Date().toISOString(),
+        courseId: null, // Added for partner instructor course association
+        courseTitle: null
     });
+
+    useEffect(() => {
+        if (!user) return;
+
+        checkPartnerInstructorStatus();
+    }, [user]);
+
+    useEffect(() => {
+        if (isPartnerInstructor && isNew) {
+            fetchPartnerCourses();
+        }
+    }, [isPartnerInstructor, isNew]);
 
     useEffect(() => {
         if (!isNew && user) {
@@ -65,13 +95,87 @@ export default function AssessmentEditor() {
         }
     }, [id, user]);
 
+    // Check if user is a partner instructor
+    const checkPartnerInstructorStatus = async () => {
+        try {
+            if (userRole === "partner_instructor") {
+                setIsPartnerInstructor(true);
+                return;
+            }
+
+            // Fallback check
+            const partnerInstructorRef = doc(db, "partner_instructors", user.uid);
+            const partnerSnap = await getDoc(partnerInstructorRef);
+
+            if (partnerSnap.exists()) {
+                setIsPartnerInstructor(true);
+            }
+        } catch (error) {
+            console.error("Error checking partner instructor status:", error);
+        }
+    };
+
+    // Fetch courses assigned to partner instructor
+    const fetchPartnerCourses = async () => {
+        setFetchingCourses(true);
+        try {
+            const partnerInstructorRef = doc(db, "partner_instructors", user.uid);
+            const partnerSnap = await getDoc(partnerInstructorRef);
+
+            if (partnerSnap.exists()) {
+                const partnerData = partnerSnap.data();
+                const assignedCourses = partnerData.assignedCourses || [];
+
+                // Fetch course details for each assigned course
+                const coursePromises = assignedCourses.map(async (courseId) => {
+                    const courseRef = doc(db, "courses", courseId);
+                    const courseSnap = await getDoc(courseRef);
+                    if (courseSnap.exists()) {
+                        return {
+                            id: courseId,
+                            title: courseSnap.data().title,
+                            ...courseSnap.data()
+                        };
+                    }
+                    return null;
+                });
+
+                const courses = (await Promise.all(coursePromises)).filter(Boolean);
+                setPartnerCourses(courses);
+            }
+        } catch (error) {
+            console.error("Error fetching partner courses:", error);
+        } finally {
+            setFetchingCourses(false);
+        }
+    };
+
     const fetchAssessment = async () => {
         setLoading(true);
         try {
             const docSnap = await getDoc(doc(db, "assessments", id));
             if (docSnap.exists()) {
                 const data = docSnap.data();
-                // Ensure questions have type field (default to single choice for backward compatibility)
+
+                // Check permissions for partner instructors
+                if (isPartnerInstructor) {
+                    const partnerInstructorRef = doc(db, "partner_instructors", user.uid);
+                    const partnerSnap = await getDoc(partnerInstructorRef);
+
+                    if (partnerSnap.exists()) {
+                        const partnerData = partnerSnap.data();
+                        const assignedCourses = partnerData.assignedCourses || [];
+
+                        // If assessment has a courseId, check if it's in assigned courses
+                        if (data.courseId && !assignedCourses.includes(data.courseId)) {
+                            alert("You don't have permission to edit this assessment");
+                            navigate("/instructor/assessments");
+                            return;
+                        }
+                    }
+                }
+
+                // Ensure questions have type field
                 const questions = data.questions?.map(q => ({
                     ...q,
                     type: q.type || QUESTION_TYPES.SINGLE_CHOICE,
@@ -89,6 +193,7 @@ export default function AssessmentEditor() {
             }
         } catch (error) {
             console.error("Error fetching assessment:", error);
+            alert("Error loading assessment");
         } finally {
             setLoading(false);
         }
@@ -96,6 +201,43 @@ export default function AssessmentEditor() {
 
     const handleSave = async (e) => {
         e.preventDefault();
+
+        // Validate questions
+        if (assessment.questions.length === 0) {
+            alert("Please add at least one question");
+            return;
+        }
+
+        // Validate question text and options
+        for (const [index, question] of assessment.questions.entries()) {
+            if (!question.text.trim()) {
+                alert(`Question ${index + 1} has no text`);
+                return;
+            }
+
+            if (question.type !== QUESTION_TYPES.PARAGRAPH && question.options) {
+                const validOptions = question.options.filter(opt => opt.trim() !== "");
+                if (validOptions.length < 2) {
+                    alert(`Question ${index + 1} needs at least 2 valid options`);
+                    return;
+                }
+
+                if (question.type === QUESTION_TYPES.SINGLE_CHOICE ||
+                    question.type === QUESTION_TYPES.IMAGE_TEXT) {
+                    if (question.correctAnswer === undefined ||
+                        question.correctAnswer >= validOptions.length) {
+                        alert(`Question ${index + 1} needs a valid correct answer`);
+                        return;
+                    }
+                } else if (question.type === QUESTION_TYPES.MULTIPLE_CHOICE) {
+                    if (!question.correctAnswers?.length) {
+                        alert(`Question ${index + 1} needs at least one correct answer`);
+                        return;
+                    }
+                }
+            }
+        }
+
         setLoading(true);
 
         try {
@@ -106,38 +248,59 @@ export default function AssessmentEditor() {
                 return;
             }
 
-            // 1. Clean up the data object
-            // 2. Ensure both owner fields are set for rule compatibility
+            // Prepare data with proper ownership fields
             const data = {
                 ...assessment,
-                instructorId: user.uid, // For instructor rules
-                createdBy: user.uid,    // For guest/announcement rules
-                institutionId: user.institutionId || null,
-                updatedAt: new Date().toISOString(), // Good practice
+                instructorId: user.uid,
+                instructorName: user.displayName || user.email,
+                createdBy: user.uid,
+                updatedAt: new Date().toISOString(),
                 questions: assessment.questions.map(q => ({
                     id: q.id,
-                    text: q.text,
+                    text: q.text.trim(),
                     type: q.type,
                     imageUrl: q.imageUrl || null,
-                    options: q.options || [],
-                    correctAnswer: q.type === QUESTION_TYPES.SINGLE_CHOICE ? q.correctAnswer : null,
+                    options: q.type !== QUESTION_TYPES.PARAGRAPH ?
+                        (q.options || []).map(opt => opt.trim()).filter(opt => opt !== "") :
+                        undefined,
+                    correctAnswer: (q.type === QUESTION_TYPES.SINGLE_CHOICE ||
+                        q.type === QUESTION_TYPES.IMAGE_TEXT) ? q.correctAnswer : null,
                     correctAnswers: q.type === QUESTION_TYPES.MULTIPLE_CHOICE ? q.correctAnswers : [],
                 }))
             };
 
+            // For partner instructors, add course information
+            if (isPartnerInstructor && assessment.courseId) {
+                const selectedCourse = partnerCourses.find(c => c.id === assessment.courseId);
+                if (selectedCourse) {
+                    data.courseId = selectedCourse.id;
+                    data.courseTitle = selectedCourse.title;
+                }
+            }
+
             if (isNew) {
-                // Add createdAt only on new docs
                 data.createdAt = new Date().toISOString();
                 await addDoc(collection(db, "assessments"), data);
             } else {
-                // Use updateDoc to modify existing
+                // Check if partner instructor is editing someone else's assessment
+                if (isPartnerInstructor) {
+                    const originalDoc = await getDoc(doc(db, "assessments", id));
+                    if (originalDoc.exists()) {
+                        const originalData = originalDoc.data();
+                        if (originalData.instructorId !== user.uid) {
+                            alert("You can only edit assessments you created");
+                            setLoading(false);
+                            return;
+                        }
+                    }
+                }
+
                 await updateDoc(doc(db, "assessments", id), data);
             }
 
             navigate("/instructor/assessments");
         } catch (error) {
             console.error("Error saving assessment:", error);
-            // This will now give you more detail if it's still failing
             alert(`Failed to save: ${error.message}`);
         } finally {
             setLoading(false);
@@ -151,15 +314,12 @@ export default function AssessmentEditor() {
             type: type,
         };
 
-        // Set initial structure based on question type
         if (type === QUESTION_TYPES.PARAGRAPH) {
-            // Paragraph questions don't need options or correct answers
             setAssessment(prev => ({
                 ...prev,
                 questions: [...prev.questions, newQuestion]
             }));
         } else if (type === QUESTION_TYPES.IMAGE_TEXT) {
-            // Image+text questions can have optional options
             setAssessment(prev => ({
                 ...prev,
                 questions: [
@@ -167,13 +327,12 @@ export default function AssessmentEditor() {
                     {
                         ...newQuestion,
                         options: ["", "", "", ""],
-                        correctAnswer: 0, // Default to first option
+                        correctAnswer: 0,
                         imageUrl: null
                     }
                 ]
             }));
         } else {
-            // For single and multiple choice, add options
             setAssessment(prev => ({
                 ...prev,
                 questions: [
@@ -211,13 +370,11 @@ export default function AssessmentEditor() {
         const newQuestions = [...assessment.questions];
         const question = newQuestions[qIndex];
 
-        // Remove the option
         question.options.splice(oIndex, 1);
 
-        // Update correct answers if needed
         if (question.type === QUESTION_TYPES.SINGLE_CHOICE || question.type === QUESTION_TYPES.IMAGE_TEXT) {
             if (question.correctAnswer === oIndex) {
-                question.correctAnswer = 0; // Reset to first option
+                question.correctAnswer = 0;
             } else if (question.correctAnswer > oIndex) {
                 question.correctAnswer -= 1;
             }
@@ -240,11 +397,9 @@ export default function AssessmentEditor() {
             const answerIndexNum = Number(answerIndex);
 
             if (newCorrectAnswers.includes(answerIndexNum)) {
-                // Remove if already selected
                 const index = newCorrectAnswers.indexOf(answerIndexNum);
                 newCorrectAnswers.splice(index, 1);
             } else {
-                // Add if not selected
                 newCorrectAnswers.push(answerIndexNum);
             }
 
@@ -264,23 +419,19 @@ export default function AssessmentEditor() {
         question.type = newType;
 
         if (newType === QUESTION_TYPES.PARAGRAPH) {
-            // Remove options and image for paragraph type
             delete question.options;
             delete question.correctAnswer;
             delete question.correctAnswers;
             delete question.imageUrl;
         } else if (newType === QUESTION_TYPES.IMAGE_TEXT) {
-            // Keep image URL, add options if not present
             if (!question.options) {
                 question.options = ["", "", "", ""];
             }
             question.correctAnswer = question.correctAnswer !== undefined ? question.correctAnswer : 0;
             delete question.correctAnswers;
         } else {
-            // Remove image for non-image question types
             delete question.imageUrl;
 
-            // Add default options if not present
             if (!question.options) {
                 question.options = ["", "", "", ""];
             }
@@ -300,7 +451,11 @@ export default function AssessmentEditor() {
     const handleImageUpload = async (qIndex, file) => {
         if (!file) return;
 
-        // Set uploading state for this question
+        if (file.size > 5 * 1024 * 1024) {
+            alert("Image size must be less than 5MB");
+            return;
+        }
+
         setUploadingImages(prev => ({ ...prev, [qIndex]: true }));
 
         try {
@@ -322,10 +477,18 @@ export default function AssessmentEditor() {
         const doc = new jsPDF();
         doc.setFontSize(18);
         doc.text(assessment.title, 10, 10);
-        doc.setFontSize(12);
-        doc.text(`Access Code: ${assessment.accessCode}`, 10, 20);
 
-        let y = 30;
+        if (assessment.courseTitle) {
+            doc.setFontSize(12);
+            doc.text(`Course: ${assessment.courseTitle}`, 10, 18);
+            doc.setFontSize(10);
+            doc.text(`Access Code: ${assessment.accessCode}`, 10, 26);
+        } else {
+            doc.setFontSize(12);
+            doc.text(`Access Code: ${assessment.accessCode}`, 10, 18);
+        }
+
+        let y = assessment.courseTitle ? 34 : 26;
         assessment.questions.forEach((q, i) => {
             if (y > 270) { doc.addPage(); y = 10; }
 
@@ -333,15 +496,12 @@ export default function AssessmentEditor() {
             doc.text(`Q${i + 1}: ${q.text}`, 10, y);
             y += 7;
 
-            // Add image note if present
             if (q.imageUrl) {
                 doc.setFont(undefined, 'italic');
                 doc.text("[Image included in online version]", 15, y);
                 y += 6;
                 doc.setFont(undefined, 'normal');
             }
-
-            doc.setFont(undefined, 'normal');
 
             if (q.type === QUESTION_TYPES.PARAGRAPH) {
                 doc.text("Answer: ___________________________", 15, y);
@@ -364,7 +524,13 @@ export default function AssessmentEditor() {
         doc.save(`${assessment.title.replace(/\s+/g, '_')}_Questions.pdf`);
     };
 
-    if (loading && !isNew && !assessment.id) return <div>Loading...</div>;
+    if (loading && !isNew && !assessment.id) {
+        return (
+            <div className="flex justify-center items-center h-64">
+                <Loader2 className="h-8 w-8 animate-spin text-gray-500" />
+            </div>
+        );
+    }
 
     return (
         <div className="max-w-4xl mx-auto space-y-6 pb-20">
@@ -373,9 +539,17 @@ export default function AssessmentEditor() {
                     <Button variant="ghost" onClick={() => navigate("/instructor/assessments")}>
                         <ArrowLeft className="mr-2 h-4 w-4" /> Back
                     </Button>
-                    <h1 className="text-3xl font-bold tracking-tight">
-                        {isNew ? "Create Assessment" : "Edit Assessment"}
-                    </h1>
+                    <div>
+                        <h1 className="text-3xl font-bold tracking-tight">
+                            {isNew ? "Create Assessment" : "Edit Assessment"}
+                        </h1>
+                        {isPartnerInstructor && (
+                            <div className="flex items-center gap-2 text-sm text-muted-foreground mt-1">
+                                <Users className="h-3 w-3" />
+                                <span>Partner Instructor Mode</span>
+                            </div>
+                        )}
+                    </div>
                 </div>
                 <div className="flex items-center gap-2">
                     {!isNew && (
@@ -397,7 +571,7 @@ export default function AssessmentEditor() {
                     </CardHeader>
                     <CardContent className="space-y-4">
                         <div className="space-y-2">
-                            <Label htmlFor="title">Title</Label>
+                            <Label htmlFor="title">Title *</Label>
                             <Input
                                 id="title"
                                 required
@@ -406,6 +580,7 @@ export default function AssessmentEditor() {
                                 placeholder="e.g. Final Exam"
                             />
                         </div>
+
                         <div className="space-y-2">
                             <Label htmlFor="description">Description</Label>
                             <Textarea
@@ -413,14 +588,80 @@ export default function AssessmentEditor() {
                                 value={assessment.description}
                                 onChange={(e) => setAssessment({ ...assessment, description: e.target.value })}
                                 placeholder="Assessment description..."
+                                rows={3}
                             />
                         </div>
+
+                        {/* Course Selection for Partner Instructors (New Assessments) */}
+                        {isPartnerInstructor && isNew && (
+                            <div className="space-y-2">
+                                <Label htmlFor="course">Course *</Label>
+                                {fetchingCourses ? (
+                                    <div className="flex items-center gap-2 text-gray-500">
+                                        <Loader2 className="h-4 w-4 animate-spin" />
+                                        Loading your assigned courses...
+                                    </div>
+                                ) : partnerCourses.length > 0 ? (
+                                    <Select
+                                        required
+                                        value={assessment.courseId || ""}
+                                        onValueChange={(value) => {
+                                            const selectedCourse = partnerCourses.find(c => c.id === value);
+                                            setAssessment({
+                                                ...assessment,
+                                                courseId: value,
+                                                courseTitle: selectedCourse?.title
+                                            });
+                                        }}
+                                    >
+                                        <SelectTrigger>
+                                            <SelectValue placeholder="Select a course" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            {partnerCourses.map(course => (
+                                                <SelectItem key={course.id} value={course.id}>
+                                                    <div className="flex items-center gap-2">
+                                                        <BookOpen className="h-3 w-3" />
+                                                        {course.title}
+                                                    </div>
+                                                </SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
+                                ) : (
+                                    <div className="text-amber-600 bg-amber-50 p-3 rounded-md">
+                                        <p className="font-medium">No courses assigned</p>
+                                        <p className="text-sm mt-1">
+                                            You need to be assigned to at least one course to create assessments.
+                                            Contact your institution administrator.
+                                        </p>
+                                    </div>
+                                )}
+                                <p className="text-xs text-gray-500">
+                                    As a partner instructor, you can only create assessments for your assigned courses.
+                                </p>
+                            </div>
+                        )}
+
+                        {/* Display course info for existing assessments */}
+                        {!isNew && assessment.courseTitle && (
+                            <div className="space-y-2">
+                                <Label>Course</Label>
+                                <div className="flex items-center gap-2 p-3 bg-gray-50 rounded-md">
+                                    <BookOpen className="h-4 w-4 text-gray-500" />
+                                    <span>{assessment.courseTitle}</span>
+                                </div>
+                            </div>
+                        )}
                     </CardContent>
                 </Card>
 
                 <div className="space-y-4">
                     <div className="flex items-center justify-between">
                         <h2 className="text-xl font-semibold">Questions</h2>
+                        <div className="text-sm text-gray-500">
+                            {assessment.questions.length} question{assessment.questions.length !== 1 ? 's' : ''}
+                        </div>
                     </div>
 
                     {/* Question Type Selector */}
@@ -430,6 +671,7 @@ export default function AssessmentEditor() {
                             variant="outline"
                             onClick={() => addQuestion(QUESTION_TYPES.SINGLE_CHOICE)}
                             className="flex items-center gap-2"
+                            disabled={isPartnerInstructor && !assessment.courseId}
                         >
                             <Square className="h-4 w-4" />
                             Single Choice
@@ -439,6 +681,7 @@ export default function AssessmentEditor() {
                             variant="outline"
                             onClick={() => addQuestion(QUESTION_TYPES.MULTIPLE_CHOICE)}
                             className="flex items-center gap-2"
+                            disabled={isPartnerInstructor && !assessment.courseId}
                         >
                             <CheckSquare className="h-4 w-4" />
                             Multiple Choice
@@ -448,6 +691,7 @@ export default function AssessmentEditor() {
                             variant="outline"
                             onClick={() => addQuestion(QUESTION_TYPES.PARAGRAPH)}
                             className="flex items-center gap-2"
+                            disabled={isPartnerInstructor && !assessment.courseId}
                         >
                             <Type className="h-4 w-4" />
                             Paragraph
@@ -457,18 +701,34 @@ export default function AssessmentEditor() {
                             variant="outline"
                             onClick={() => addQuestion(QUESTION_TYPES.IMAGE_TEXT)}
                             className="flex items-center gap-2"
+                            disabled={isPartnerInstructor && !assessment.courseId}
                         >
                             <Image className="h-4 w-4" />
                             Image + Text
                         </Button>
                     </div>
 
+                    {isPartnerInstructor && !assessment.courseId && isNew && (
+                        <div className="bg-amber-50 border border-amber-200 rounded-md p-4">
+                            <p className="text-amber-800 font-medium">
+                                Select a course first to add questions
+                            </p>
+                        </div>
+                    )}
+
                     {assessment.questions.map((q, qIndex) => (
                         <Card key={q.id}>
                             <CardContent className="pt-6 space-y-4">
                                 <div className="flex gap-4">
                                     <div className="flex flex-col gap-2">
-                                        <span className="font-bold pt-2">Q{qIndex + 1}</span>
+                                        <div className="flex items-center gap-2">
+                                            <span className="font-bold">Q{qIndex + 1}</span>
+                                            {q.imageUrl && (
+                                                <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded-full">
+                                                    Has Image
+                                                </span>
+                                            )}
+                                        </div>
                                         <Select
                                             value={q.type}
                                             onValueChange={(value) => changeQuestionType(qIndex, value)}
@@ -506,15 +766,13 @@ export default function AssessmentEditor() {
                                     </div>
 
                                     <div className="flex-1 space-y-4">
-                                        {/* Question Text Input */}
                                         <Input
-                                            placeholder="Question text"
+                                            placeholder="Question text *"
                                             value={q.text}
                                             onChange={(e) => updateQuestion(qIndex, "text", e.target.value)}
                                             required
                                         />
 
-                                        {/* Image Upload for IMAGE_TEXT type */}
                                         {q.type === QUESTION_TYPES.IMAGE_TEXT && (
                                             <div className="space-y-2">
                                                 <Label>Question Image (Optional)</Label>
@@ -572,13 +830,12 @@ export default function AssessmentEditor() {
                                             </div>
                                         )}
 
-                                        {/* Options for multiple choice questions and image+text questions */}
                                         {(q.type === QUESTION_TYPES.SINGLE_CHOICE ||
                                             q.type === QUESTION_TYPES.MULTIPLE_CHOICE ||
                                             q.type === QUESTION_TYPES.IMAGE_TEXT) ? (
                                             <>
                                                 <div className="space-y-2">
-                                                    <Label>Options</Label>
+                                                    <Label>Options *</Label>
                                                     <div className="space-y-3">
                                                         {q.options.map((opt, oIndex) => (
                                                             <div key={oIndex} className="flex gap-2 items-center">
@@ -634,7 +891,9 @@ export default function AssessmentEditor() {
                                             <div className="space-y-2">
                                                 <Label>Answer Format</Label>
                                                 <div className="p-4 border rounded-md bg-gray-50">
-                                                    <p className="text-gray-600">Paragraph answer field will be shown to students</p>
+                                                    <p className="text-gray-600">
+                                                        Students will see a paragraph text area for their answer
+                                                    </p>
                                                 </div>
                                             </div>
                                         ) : null}
@@ -644,7 +903,7 @@ export default function AssessmentEditor() {
                                         type="button"
                                         variant="ghost"
                                         size="icon"
-                                        className="text-destructive"
+                                        className="text-destructive self-start"
                                         onClick={() => removeQuestion(qIndex)}
                                     >
                                         <Trash2 className="h-4 w-4" />
@@ -657,7 +916,10 @@ export default function AssessmentEditor() {
                     {assessment.questions.length === 0 && (
                         <div className="text-center py-8 border-2 border-dashed rounded-lg">
                             <p className="text-gray-500 mb-4">No questions added yet</p>
-                            <p className="text-sm text-gray-400">Use the buttons above to add questions</p>
+                            <p className="text-sm text-gray-400">
+                                Use the buttons above to add questions
+                                {isPartnerInstructor && !assessment.courseId && " (select a course first)"}
+                            </p>
                         </div>
                     )}
                 </div>
