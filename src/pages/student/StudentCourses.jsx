@@ -95,12 +95,13 @@ export default function StudentCourses() {
                 return;
             }
 
+
+            console.log("userDATA:   ");
+            console.log(userData);
+
             const enrolledIds = userData.enrolledCourses;
             const bannedFrom = userData.bannedFrom || [];
-
-            // Separate banned and active courses
-            const activeCourseIds = enrolledIds.filter(id => !bannedFrom.includes(id));
-            const bannedCourseIds = enrolledIds.filter(id => bannedFrom.includes(id));
+            const mentorId = userData.mentorId; // Assuming mentorId is stored in userData
 
             const chunks = [];
             for (let i = 0; i < enrolledIds.length; i += 10) {
@@ -110,38 +111,51 @@ export default function StudentCourses() {
             let allCourses = [];
 
             for (const chunk of chunks) {
-                // Fetch courses
+                // 1. Fetch Course Data
                 const coursesQuery = query(collection(db, "courses"), where(documentId(), "in", chunk));
                 const coursesSnap = await getDocs(coursesQuery);
 
-                // Fetch progress
+                // 2. Fetch Student Progress
                 const progressQuery = query(collection(db, "users", user.uid, "courseProgress"), where(documentId(), "in", chunk));
                 const progressSnap = await getDocs(progressQuery);
 
-                // Map progress by course ID
                 const progressMap = {};
                 progressSnap.forEach(doc => {
                     progressMap[doc.id] = doc.data();
                 });
 
-                // Process each course
+                // 3. NEW: Fetch Assignment Status (The Kill-Switch)
+                // We fetch the status for each course in the chunk to see if the mentor is still active
+                const assignmentMap = {};
+                if (mentorId) {
+                    await Promise.all(chunk.map(async (courseId) => {
+                        const assignmentId = `${mentorId}_${courseId}`;
+                        const assignmentSnap = await getDoc(doc(db, "mentorCourseAssignments", assignmentId));
+                        assignmentMap[courseId] = assignmentSnap.exists() ? assignmentSnap.data().status : "inactive";
+                    }));
+                }
+
+                // 4. Process each course
                 const chunkCourses = await Promise.all(coursesSnap.docs.map(async (courseDoc) => {
                     const courseData = courseDoc.data();
                     const courseId = courseDoc.id;
-                    const isBanned = bannedFrom.includes(courseId);
+
+                    // Logic: A course is "Banned" if it's in the banned list OR the assignment is not active
+                    const isAssignmentInactive = mentorId && assignmentMap[courseId] !== "active";
+                    const isBanned = bannedFrom.includes(courseId) || isAssignmentInactive;
+
                     const progress = progressMap[courseId] || {
                         completedModules: [],
                         quizAttempts: {},
                         started: false
                     };
 
-                    // For banned courses, we don't need to fetch sections
                     if (isBanned) {
                         return {
                             id: courseId,
                             ...courseData,
                             isBanned: true,
-                            bannedReason: "Access restricted by instructor",
+                            bannedReason: isAssignmentInactive ? "Access revoked by institution" : "Access restricted by instructor",
                             bannedDate: progress.lastAccessed || new Date().toISOString(),
                             totalModules: 0,
                             progress,
@@ -155,199 +169,83 @@ export default function StudentCourses() {
                         };
                     }
 
+                    // --- EXISTING ACTIVE COURSE LOGIC START ---
                     let totalModules = 0;
                     let allModules = [];
 
                     try {
-                        // Fetch sections from the subcollection (matching CoursePlayer)
                         const sectionsRef = collection(db, `courses/${courseId}/sections`);
                         const sectionsQuery = query(sectionsRef, orderBy("order", "asc"));
                         const sectionsSnap = await getDocs(sectionsQuery);
-
                         const sectionsData = [];
 
                         sectionsSnap.forEach(sectionDoc => {
                             const sectionData = sectionDoc.data();
                             const sectionId = sectionDoc.id;
 
-                            // Debug log
-                            console.log(`Section ${sectionId}:`, {
-                                title: sectionData.title,
-                                directModules: sectionData.modules?.length || 0,
-                                subSections: sectionData.subSections?.length || 0
-                            });
-
-                            // Count direct modules in section
                             const directModules = Array.isArray(sectionData.modules) ? sectionData.modules : [];
                             totalModules += directModules.length;
 
-                            // Count modules in sub-sections
                             let subSectionModulesCount = 0;
                             let subSectionModules = [];
                             const subSections = Array.isArray(sectionData.subSections) ? sectionData.subSections : [];
 
                             subSections.forEach(subSection => {
-                                // Debug subSection
-                                console.log(`  Sub-section ${subSection.title}:`, {
-                                    modules: subSection.modules?.length || 0
-                                });
-
                                 const subSectionModulesList = Array.isArray(subSection.modules) ? subSection.modules : [];
                                 subSectionModulesCount += subSectionModulesList.length;
                                 subSectionModules = subSectionModules.concat(subSectionModulesList);
                             });
 
                             totalModules += subSectionModulesCount;
-
-                            // Combine all modules for this section
                             const sectionAllModules = [...directModules, ...subSectionModules];
 
-                            // Process each module with additional metadata
                             const processedModules = sectionAllModules.map(module => {
-                                // Check if module is from sub-section
                                 const fromSubSection = subSectionModules.includes(module);
-                                let subSection = null;
-                                if (fromSubSection) {
-                                    subSection = subSections.find(ss =>
-                                        Array.isArray(ss.modules) && ss.modules.includes(module)
-                                    );
-                                }
+                                let subSection = fromSubSection ? subSections.find(ss => Array.isArray(ss.modules) && ss.modules.includes(module)) : null;
 
-                                // Create path based on module location
-                                let path;
-                                if (fromSubSection && subSection) {
-                                    path = `/student/course/${courseId}/section/${sectionId}/sub-section/${subSection.id}/module/${module.id}`;
-                                } else {
-                                    path = `/student/course/${courseId}/section/${sectionId}/module/${module.id}`;
-                                }
-
-                                // Ensure module has an ID
-                                const moduleId = module.id || `${sectionId}-${module.title?.replace(/\s+/g, '-').toLowerCase()}`;
+                                let path = fromSubSection && subSection
+                                    ? `/student/course/${courseId}/section/${sectionId}/sub-section/${subSection.id}/module/${module.id}`
+                                    : `/student/course/${courseId}/section/${sectionId}/module/${module.id}`;
 
                                 return {
                                     ...module,
-                                    id: moduleId,
-                                    sectionId: sectionId,
+                                    id: module.id || `${sectionId}-${module.title?.replace(/\s+/g, '-').toLowerCase()}`,
+                                    sectionId,
                                     isSubSection: fromSubSection,
                                     subSectionId: subSection?.id || null,
-                                    path: path,
+                                    path,
                                     order: typeof module.order === 'number' ? module.order : 999
                                 };
                             });
 
                             allModules = allModules.concat(processedModules);
-
-                            sectionsData.push({
-                                id: sectionId,
-                                ...sectionData,
-                                order: sectionData.order || 0,
-                                processedModules: processedModules
-                            });
+                            sectionsData.push({ id: sectionId, ...sectionData, order: sectionData.order || 0, processedModules });
                         });
 
-                        console.log(`Course ${courseData.title}: Total modules = ${totalModules}, All modules array length = ${allModules.length}`);
-
-                        // Sort sections by order
                         sectionsData.sort((a, b) => (a.order || 0) - (b.order || 0));
-
-                        // Sort all modules by section order and then module order
                         allModules.sort((a, b) => {
-                            // Find sections for each module
-                            const sectionA = sectionsData.find(s => s.id === a.sectionId);
-                            const sectionB = sectionsData.find(s => s.id === b.sectionId);
-
-                            // Sort by section order first
-                            if (sectionA && sectionB && sectionA.order !== sectionB.order) {
-                                return (sectionA.order || 0) - (sectionB.order || 0);
-                            }
-
-                            // Then sort by module order
+                            const sA = sectionsData.find(s => s.id === a.sectionId);
+                            const sB = sectionsData.find(s => s.id === b.sectionId);
+                            if (sA && sB && sA.order !== sB.order) return sA.order - sB.order;
                             return (a.order || 0) - (b.order || 0);
                         });
-
                     } catch (error) {
-                        console.error(`Error fetching sections for course ${courseId}:`, error);
+                        console.error(`Error fetching sections:`, error);
                     }
 
-                    // Check if course is started
-                    const isStarted = progress.started ||
-                        (progress.completedModules && progress.completedModules.length > 0) ||
-                        progress.lastAccessed;
-
-                    // Mark as started if not already marked
+                    const isStarted = progress.started || (progress.completedModules?.length > 0) || progress.lastAccessed;
                     if (!progress.started && isStarted) {
                         try {
                             const progressRef = doc(db, "users", user.uid, "courseProgress", courseId);
-                            await updateDoc(progressRef, {
-                                started: true,
-                                lastAccessed: new Date().toISOString()
-                            }, { merge: true });
+                            await updateDoc(progressRef, { started: true, lastAccessed: new Date().toISOString() });
                             progress.started = true;
-                        } catch (error) {
-                            console.error("Error marking course as started:", error);
-                        }
+                        } catch (e) { console.error(e); }
                     }
 
-                    // Find first incomplete module
-                    let nextModule = null;
-                    let nextModulePath = null;
-
-                    if (allModules.length > 0) {
-                        for (const module of allModules) {
-                            const moduleId = module.id;
-                            if (!progress.completedModules?.includes(moduleId)) {
-                                nextModule = module;
-                                nextModulePath = module.path;
-                                break;
-                            }
-                        }
-
-                        // If all modules completed or none found, go to first module
-                        if (!nextModule) {
-                            nextModule = allModules[0];
-                            nextModulePath = allModules[0].path;
-                        }
-                    }
-
-                    // Check for quizzes
-                    let nextQuiz = null;
-                    let quizAttempted = false;
-                    let hasQuizzes = false;
-
-                    if (progress.quizAttempts) {
-                        for (const module of allModules) {
-                            const moduleType = module.type?.toLowerCase();
-                            if (moduleType === 'quiz' || moduleType === 'assessment') {
-                                hasQuizzes = true;
-                                const quizId = module.id;
-                                const attempt = progress.quizAttempts[quizId];
-
-                                if (!nextQuiz && (!attempt || !attempt.completed)) {
-                                    nextQuiz = {
-                                        id: quizId,
-                                        title: module.title,
-                                        sectionTitle: "Quiz",
-                                        path: module.path.replace('/module/', '/quiz/'),
-                                        isAvailable: true
-                                    };
-                                }
-
-                                if (attempt?.completed) {
-                                    quizAttempted = true;
-                                }
-                            }
-                        }
-                    }
+                    let nextModulePath = allModules.length > 0 ? (allModules.find(m => !progress.completedModules?.includes(m.id))?.path || allModules[0].path) : null;
 
                     const completedCount = progress.completedModules?.length || 0;
                     const progressPercent = totalModules > 0 ? Math.round((completedCount / totalModules) * 100) : 0;
-                    const completed = progressPercent === 100 && totalModules > 0;
-
-                    console.log(`Final stats for ${courseData.title}:`);
-                    console.log(`- Total modules: ${totalModules}`);
-                    console.log(`- Completed modules: ${completedCount}`);
-                    console.log(`- Progress: ${progressPercent}%`);
-                    console.log(`- All modules found:`, allModules.map(m => ({ title: m.title, id: m.id })));
 
                     return {
                         id: courseId,
@@ -356,47 +254,33 @@ export default function StudentCourses() {
                         totalModules,
                         progress,
                         nextModulePath,
-                        nextQuiz,
-                        quizAttempted: hasQuizzes && quizAttempted && !nextQuiz,
                         completedCount,
                         progressPercent,
-                        completed,
+                        completed: progressPercent === 100 && totalModules > 0,
                         started: progress.started || false,
                         lastAccessed: progress.lastAccessed
                     };
+                    // --- EXISTING ACTIVE COURSE LOGIC END ---
                 }));
 
                 allCourses = [...allCourses, ...chunkCourses];
             }
 
-            // Separate banned and active courses
             const activeCourses = allCourses.filter(c => !c.isBanned);
             const bannedCoursesList = allCourses.filter(c => c.isBanned);
 
-            // Sort active courses
             activeCourses.sort((a, b) => {
                 if (!a.started && b.started) return -1;
                 if (a.started && !b.started) return 1;
-                if (a.completed && !b.completed) return 1;
-                if (!a.completed && b.completed) return -1;
                 return b.progressPercent - a.progressPercent;
             });
 
-            // Calculate statistics
-            const totalCourses = allCourses.length;
-            const activeCoursesCount = activeCourses.length;
-            const bannedCoursesCount = bannedCoursesList.length;
-            const completedCoursesCount = activeCourses.filter(c => c.completed).length;
-            const averageProgress = activeCourses.length > 0
-                ? Math.round(activeCourses.reduce((sum, c) => sum + c.progressPercent, 0) / activeCourses.length)
-                : 0;
-
             setStats({
-                totalCourses,
-                activeCourses: activeCoursesCount,
-                bannedCourses: bannedCoursesCount,
-                averageProgress,
-                completedCourses: completedCoursesCount
+                totalCourses: allCourses.length,
+                activeCourses: activeCourses.length,
+                bannedCourses: bannedCoursesList.length,
+                completedCourses: activeCourses.filter(c => c.completed).length,
+                averageProgress: activeCourses.length > 0 ? Math.round(activeCourses.reduce((s, c) => s + c.progressPercent, 0) / activeCourses.length) : 0
             });
 
             setEnrolledCourses(activeCourses);
@@ -408,6 +292,7 @@ export default function StudentCourses() {
         }
     };
     const handleStartCourse = async (courseId) => {
+        console.log("course id: ", courseId);
         if (startingCourse === courseId) return;
 
         setStartingCourse(courseId);

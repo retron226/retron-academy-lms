@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useState } from "react";
 import { onAuthStateChanged, signOut as firebaseSignOut } from "firebase/auth";
 import { auth, db } from "../lib/firebase";
-import { doc, getDoc, onSnapshot } from "firebase/firestore";
+import { doc, onSnapshot, collection, query, where, getDocs, limit } from "firebase/firestore";
 import { Loader2 } from "lucide-react";
 import { isFirebaseInitialized } from "../lib/firebase";
 import { hasPermission as checkPermission, canAccessRoute, isGuestAccessExpired } from "../lib/rbac";
@@ -20,36 +20,52 @@ export const AuthProvider = ({ children }) => {
         const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
             setUser(user);
             if (user) {
-                // Real-time listener for user data
+                // REAL-TIME: Listen to changes in the user document
                 const unsubscribeSnapshot = onSnapshot(
                     doc(db, "users", user.uid),
-                    (doc) => {
-                        if (doc.exists()) {
-                            const data = doc.data();
-                            setUserData(data);
+                    async (snapshot) => {
+                        if (snapshot.exists()) {
+                            const data = snapshot.data();
+                            let enhancedData = { ...data, uid: user.uid };
 
-                            // Check if guest access has expired
-                            if (data.role === 'guest' && isGuestAccessExpired(data)) {
-                                setGuestExpired(true);
-                            } else {
-                                setGuestExpired(false);
+                            // MENTOR LOOKUP: Query mentorAssignments collection using studentId
+                            if (data.role === 'student') {
+                                try {
+                                    // Based on your schema: studentId is the field name
+                                    const mentorMappingQuery = query(
+                                        collection(db, "mentorAssignments"),
+                                        where("studentId", "==", user.uid),
+                                        where("status", "==", "active"),
+                                        limit(1)
+                                    );
+
+                                    const mappingSnap = await getDocs(mentorMappingQuery);
+
+                                    if (!mappingSnap.empty) {
+                                        // Fetch the mentorId from the mapping document
+                                        enhancedData.mentorId = mappingSnap.docs[0].data().mentorId;
+                                        console.log("Assigned Mentor ID found:", enhancedData.mentorId);
+                                    }
+                                } catch (error) {
+                                    console.error("Error fetching mentor mapping:", error);
+                                }
                             }
+
+                            setUserData(enhancedData);
+                            setGuestExpired(data.role === 'guest' && isGuestAccessExpired(data));
                         } else {
-                            // User authenticated but no profile doc exists yet
                             setUserData(null);
-                            setGuestExpired(false);
                         }
                         setLoading(false);
                     },
                     (error) => {
-                        console.error("Error fetching user data:", error);
+                        console.error("Firestore Snapshot error:", error);
                         setLoading(false);
                     }
                 );
                 return () => unsubscribeSnapshot();
             } else {
                 setUserData(null);
-                setGuestExpired(false);
                 setLoading(false);
             }
         });
@@ -62,31 +78,16 @@ export const AuthProvider = ({ children }) => {
         return firebaseSignOut(auth);
     };
 
-    // Role and permission helpers
-    const hasRole = (role) => {
-        if (!userData || !userData.role) return false;
-        return userData.role === role;
-    };
-
+    // Permission helpers (Blocks access if user is suspended in Firestore)
     const hasPermission = (permission) => {
-        if (!userData || !userData.role) return false;
-
-        // If guest access expired, deny all permissions
-        if (userData.role === 'guest' && guestExpired) {
-            return false;
-        }
-
+        if (!userData || userData.suspended) return false;
+        if (userData.role === 'guest' && guestExpired) return false;
         return checkPermission(userData, permission);
     };
 
     const canAccess = (route) => {
-        if (!userData || !userData.role) return false;
-
-        // If guest access expired, deny all access except logout/login
-        if (userData.role === 'guest' && guestExpired) {
-            return false;
-        }
-
+        if (!userData || userData.suspended) return false;
+        if (userData.role === 'guest' && guestExpired) return false;
         return canAccessRoute(userData, route);
     };
 
@@ -96,16 +97,16 @@ export const AuthProvider = ({ children }) => {
         loading,
         guestExpired,
         signOut,
-        hasRole,
+        hasRole: (role) => userData?.role === role,
         hasPermission,
         canAccess,
     };
 
     if (!isFirebaseInitialized) {
         return (
-            <div className="flex h-screen w-full flex-col items-center justify-center gap-4">
-                <div className="text-xl font-semibold text-destructive">Configuration Error</div>
-                <p className="text-muted-foreground">Missing Firebase details in environment variables.</p>
+            <div className="flex h-screen flex-col items-center justify-center gap-2">
+                <h1 className="text-xl font-bold text-red-600">Config Error</h1>
+                <p>Firebase variables not found.</p>
             </div>
         );
     }
@@ -116,9 +117,7 @@ export const AuthProvider = ({ children }) => {
                 <div className="flex h-screen w-full items-center justify-center">
                     <Loader2 className="h-8 w-8 animate-spin text-primary" />
                 </div>
-            ) : (
-                children
-            )}
+            ) : children}
         </AuthContext.Provider>
     );
 };

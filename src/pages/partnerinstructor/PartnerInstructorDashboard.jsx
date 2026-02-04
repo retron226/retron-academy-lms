@@ -20,6 +20,7 @@ import InstructorAssessments from "../instructor/assessments/InstructorAssessmen
 import AssessmentEditor from "../instructor/assessments/AssessmentEditor";
 import AssessmentResults from "../instructor/assessments/AssessmentResults";
 import AssessmentEnrollmentMenu from "./AssessmentEnrollmentMenu";
+import InstructorAnnouncements from "../instructor/InstructorAnnouncements";
 
 export default function PartnerInstructorDashboard() {
     const { userData } = useAuth();
@@ -377,6 +378,7 @@ export default function PartnerInstructorDashboard() {
             <Route path="assessments/new" element={<AssessmentEditor />} />
             <Route path="assessments/edit/:id" element={<AssessmentEditor />} />
             <Route path="assessments/results/:id" element={<AssessmentResults />} />
+            <Route path="announcements" element={<InstructorAnnouncements />} />
 
             <Route path="assessments/enroll" element={<AssessmentEnrollmentMenu />} />
 

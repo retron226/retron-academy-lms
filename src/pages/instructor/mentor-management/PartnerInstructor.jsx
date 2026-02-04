@@ -531,40 +531,48 @@ export default function PartnerInstructorManagement() {
     };
 
     const handleUnassignCourse = async (instructorId, courseId) => {
-        if (!window.confirm("Are you sure you want to unassign this course from the instructor?")) {
+        if (!window.confirm("Are you sure? This will also remove access for all students assigned to this mentor for this course.")) {
             return;
         }
 
         try {
+            const batch = writeBatch(db);
+
+            // 1. Deactivate the Mentor-Course Assignment
             const assignmentId = `${instructorId}_${courseId}`;
             const assignmentRef = doc(db, "mentorCourseAssignments", assignmentId);
-
-            await updateDoc(assignmentRef, {
+            batch.update(assignmentRef, {
                 status: "inactive",
                 unassignedAt: serverTimestamp(),
-                unassignedBy: userData.uid,
                 updatedAt: serverTimestamp()
             });
 
-            // Refresh data
+            // 2. Find and deactivate all student enrollments for this mentor/course combo
+            const enrollmentsQuery = query(
+                collection(db, "enrollments"),
+                where("courseId", "==", courseId),
+                where("mentorId", "==", instructorId),
+                where("status", "==", "active")
+            );
+
+            const enrollmentDocs = await getDocs(enrollmentsQuery);
+            enrollmentDocs.forEach((enrollmentDoc) => {
+                batch.update(enrollmentDoc.ref, {
+                    status: "inactive", // or "revoked"
+                    unassignedAt: serverTimestamp(),
+                    reason: "Mentor unassigned from course"
+                });
+            });
+
+            await batch.commit();
             await fetchData();
 
-            toast({
-                title: "Success",
-                description: "Course unassigned successfully",
-                variant: "default"
-            });
-
+            toast({ title: "Success", description: "Course and student access removed." });
         } catch (error) {
-            console.error("Error unassigning course:", error);
-            toast({
-                title: "Error",
-                description: "Failed to unassign course",
-                variant: "destructive"
-            });
+            console.error("Error:", error);
+            toast({ title: "Error", variant: "destructive" });
         }
     };
-
     const handleUnassignAssessment = async (instructorId, assessmentId, assessmentTitle) => {
         if (!window.confirm(`Are you sure you want to remove "${assessmentTitle}" from this instructor?`)) {
             return;
